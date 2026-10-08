@@ -136,7 +136,8 @@ class LinuxMeasurementWarningTests(unittest.TestCase):
             root = Path(temporary)
             cpus = sorted(os.sched_getaffinity(0))
             self.assertGreaterEqual(len(cpus), 2)
-            config = validate({"victim_cores": [cpus[-2]], "perf_cpus": [cpus[-1]], "duration_s": 1,
+            # Leave time for the one-second process inventory to observe the FIFO thread.
+            config = validate({"victim_cores": [cpus[-2]], "perf_cpus": [cpus[-1]], "duration_s": 3,
                                "cooldown_s": 0, "cyclictest": {"histogram_us": 10000},
                                "scenarios": {"baseline": {"warmup_s": 0}}, "profiling": {"enabled": False},
                                "perf_passes": {"victim_memory": ["cycles", "memory_accesses", "bus_accesses"],
@@ -170,7 +171,7 @@ class LinuxMeasurementWarningTests(unittest.TestCase):
                 self.assertEqual([p["pass"] for p in passes], ["pass_victim_memory", "pass_l1d", "pass_l2"])
                 self.assertTrue(passes[0]["warnings"])
                 self.assertIsNone(passes[0]["interrupts"]["total"])
-                self.assertTrue(all(not p["issues"] and p["latency"]["samples"] == 1000 for p in passes))
+                self.assertTrue(all(not p["issues"] and p["latency"]["samples"] == 3000 for p in passes))
                 self.assertTrue(all(v["status"] == "ok" for p in passes for scope in p["perf"].values() for v in scope.values()))
                 save_json(root / "campaign.json", {"config_hash": config_hash(config), "attempts": [
                     {"item": item, "relative": relative, "outcome": "PASS", "download_verified": True}]})

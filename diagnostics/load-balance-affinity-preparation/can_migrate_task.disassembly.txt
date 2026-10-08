@@ -1,0 +1,171 @@
+
+/home/nvidia/codex-work/newidle-path-preparation/vmlinux:     file format elf64-littleaarch64
+
+
+Disassembly of section .head.text:
+
+Disassembly of section .text:
+
+ffff8000080a29a0 <can_migrate_task.part.0>:
+ffff8000080a29a0:	d503201f 	nop
+ffff8000080a29a4:	d503201f 	nop
+ffff8000080a29a8:	d503233f 	paciasp
+ffff8000080a29ac:	a9bb7bfd 	stp	x29, x30, [sp, #-80]!
+ffff8000080a29b0:	910003fd 	mov	x29, sp
+ffff8000080a29b4:	a90153f3 	stp	x19, x20, [sp, #16]
+ffff8000080a29b8:	aa0003f3 	mov	x19, x0
+ffff8000080a29bc:	f90023f9 	str	x25, [sp, #64]
+ffff8000080a29c0:	aa0103f9 	mov	x25, x1
+ffff8000080a29c4:	b9401422 	ldr	w2, [x1, #20]
+ffff8000080a29c8:	f941e400 	ldr	x0, [x0, #968]
+ffff8000080a29cc:	53067c43 	lsr	w3, w2, #6
+ffff8000080a29d0:	f8637800 	ldr	x0, [x0, x3, lsl #3]
+ffff8000080a29d4:	9ac22400 	lsr	x0, x0, x2
+ffff8000080a29d8:	12000014 	and	w20, w0, #0x1
+ffff8000080a29dc:	370006c0 	tbnz	w0, #0, ffff8000080a2ab4 <can_migrate_task.part.0+0x114>
+ffff8000080a29e0:	a90363f7 	stp	x23, x24, [sp, #48]
+ffff8000080a29e4:	d503201f 	nop
+ffff8000080a29e8:	b9404337 	ldr	w23, [x25, #64]
+ffff8000080a29ec:	b9402f20 	ldr	w0, [x25, #44]
+ffff8000080a29f0:	321d02e1 	orr	w1, w23, #0x8
+ffff8000080a29f4:	b9004321 	str	w1, [x25, #64]
+ffff8000080a29f8:	7100081f 	cmp	w0, #0x2
+ffff8000080a29fc:	540004e0 	b.eq	ffff8000080a2a98 <can_migrate_task.part.0+0xf8>  // b.none
+ffff8000080a2a00:	52800280 	mov	w0, #0x14                  	// #20
+ffff8000080a2a04:	6a0002ff 	tst	w23, w0
+ffff8000080a2a08:	54000481 	b.ne	ffff8000080a2a98 <can_migrate_task.part.0+0xf8>  // b.any
+ffff8000080a2a0c:	a9025bf5 	stp	x21, x22, [sp, #32]
+ffff8000080a2a10:	b0013dc0 	adrp	x0, ffff80000a85b000 <page_wait_table+0x2cc0>
+ffff8000080a2a14:	b94c2016 	ldr	w22, [x0, #3104]
+ffff8000080a2a18:	12800000 	mov	w0, #0xffffffff            	// #-1
+ffff8000080a2a1c:	f9401338 	ldr	x24, [x25, #32]
+ffff8000080a2a20:	f9401f35 	ldr	x21, [x25, #56]
+ffff8000080a2a24:	14000006 	b	ffff8000080a2a3c <can_migrate_task.part.0+0x9c>
+ffff8000080a2a28:	f941e663 	ldr	x3, [x19, #968]
+ffff8000080a2a2c:	53067c02 	lsr	w2, w0, #6
+ffff8000080a2a30:	f8627863 	ldr	x3, [x3, x2, lsl #3]
+ffff8000080a2a34:	9ac02463 	lsr	x3, x3, x0
+ffff8000080a2a38:	37000c03 	tbnz	w3, #0, ffff8000080a2bb8 <can_migrate_task.part.0+0x218>
+ffff8000080a2a3c:	aa1503e2 	mov	x2, x21
+ffff8000080a2a40:	aa1803e1 	mov	x1, x24
+ffff8000080a2a44:	94163117 	bl	ffff80000862eea0 <cpumask_next_and>
+ffff8000080a2a48:	6b16001f 	cmp	w0, w22
+ffff8000080a2a4c:	54fffee3 	b.cc	ffff8000080a2a28 <can_migrate_task.part.0+0x88>  // b.lo, b.ul, b.last
+ffff8000080a2a50:	2a1403e0 	mov	w0, w20
+ffff8000080a2a54:	a94153f3 	ldp	x19, x20, [sp, #16]
+ffff8000080a2a58:	a9425bf5 	ldp	x21, x22, [sp, #32]
+ffff8000080a2a5c:	a94363f7 	ldp	x23, x24, [sp, #48]
+ffff8000080a2a60:	f94023f9 	ldr	x25, [sp, #64]
+ffff8000080a2a64:	a8c57bfd 	ldp	x29, x30, [sp], #80
+ffff8000080a2a68:	d50323bf 	autiasp
+ffff8000080a2a6c:	d65f03c0 	ret
+ffff8000080a2a70:	f9419a60 	ldr	x0, [x19, #816]
+ffff8000080a2a74:	91000400 	add	x0, x0, #0x1
+ffff8000080a2a78:	f9019a60 	str	x0, [x19, #816]
+ffff8000080a2a7c:	b9404337 	ldr	w23, [x25, #64]
+ffff8000080a2a80:	b9402f20 	ldr	w0, [x25, #44]
+ffff8000080a2a84:	321d02e1 	orr	w1, w23, #0x8
+ffff8000080a2a88:	b9004321 	str	w1, [x25, #64]
+ffff8000080a2a8c:	7100081f 	cmp	w0, #0x2
+ffff8000080a2a90:	54fffb81 	b.ne	ffff8000080a2a00 <can_migrate_task.part.0+0x60>  // b.any
+ffff8000080a2a94:	d503201f 	nop
+ffff8000080a2a98:	a94363f7 	ldp	x23, x24, [sp, #48]
+ffff8000080a2a9c:	2a1403e0 	mov	w0, w20
+ffff8000080a2aa0:	a94153f3 	ldp	x19, x20, [sp, #16]
+ffff8000080a2aa4:	f94023f9 	ldr	x25, [sp, #64]
+ffff8000080a2aa8:	a8c57bfd 	ldp	x29, x30, [sp], #80
+ffff8000080a2aac:	d50323bf 	autiasp
+ffff8000080a2ab0:	d65f03c0 	ret
+ffff8000080a2ab4:	b9404020 	ldr	w0, [x1, #64]
+ffff8000080a2ab8:	121f7801 	and	w1, w0, #0xfffffffe
+ffff8000080a2abc:	b9004321 	str	w1, [x25, #64]
+ffff8000080a2ac0:	b9403e61 	ldr	w1, [x19, #60]
+ffff8000080a2ac4:	350006a1 	cbnz	w1, ffff8000080a2b98 <can_migrate_task.part.0+0x1f8>
+ffff8000080a2ac8:	3727fea0 	tbnz	w0, #4, ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2acc:	f9404661 	ldr	x1, [x19, #136]
+ffff8000080a2ad0:	d000ebc0 	adrp	x0, ffff800009e1c000 <kallsyms_token_index+0x1b7540>
+ffff8000080a2ad4:	9107c000 	add	x0, x0, #0x1f0
+ffff8000080a2ad8:	eb00003f 	cmp	x1, x0
+ffff8000080a2adc:	54fffe01 	b.ne	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>  // b.any
+ffff8000080a2ae0:	b943c260 	ldr	w0, [x19, #960]
+ffff8000080a2ae4:	7100141f 	cmp	w0, #0x5
+ffff8000080a2ae8:	54fffda0 	b.eq	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>  // b.none
+ffff8000080a2aec:	f9400320 	ldr	x0, [x25]
+ffff8000080a2af0:	b9403801 	ldr	w1, [x0, #56]
+ffff8000080a2af4:	373ffd41 	tbnz	w1, #7, ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2af8:	f9400f21 	ldr	x1, [x25, #24]
+ffff8000080a2afc:	f9400724 	ldr	x4, [x25, #8]
+ffff8000080a2b00:	b9400421 	ldr	w1, [x1, #4]
+ffff8000080a2b04:	34000241 	cbz	w1, ffff8000080a2b4c <can_migrate_task.part.0+0x1ac>
+ffff8000080a2b08:	b9405263 	ldr	w3, [x19, #80]
+ffff8000080a2b0c:	f0013dc2 	adrp	x2, ffff80000a85d000 <gic_data+0x610>
+ffff8000080a2b10:	913ca042 	add	x2, x2, #0xf28
+ffff8000080a2b14:	d0010381 	adrp	x1, ffff80000a114000 <cpu_armpmu>
+ffff8000080a2b18:	91340021 	add	x1, x1, #0xd00
+ffff8000080a2b1c:	91030265 	add	x5, x19, #0xc0
+ffff8000080a2b20:	f8635843 	ldr	x3, [x2, w3, uxtw #3]
+ffff8000080a2b24:	8b030023 	add	x3, x1, x3
+ffff8000080a2b28:	f940a463 	ldr	x3, [x3, #328]
+ffff8000080a2b2c:	eb0300bf 	cmp	x5, x3
+ffff8000080a2b30:	540001c0 	b.eq	ffff8000080a2b68 <can_migrate_task.part.0+0x1c8>  // b.none
+ffff8000080a2b34:	b9405263 	ldr	w3, [x19, #80]
+ffff8000080a2b38:	f8635842 	ldr	x2, [x2, w3, uxtw #3]
+ffff8000080a2b3c:	8b020021 	add	x1, x1, x2
+ffff8000080a2b40:	f940a821 	ldr	x1, [x1, #336]
+ffff8000080a2b44:	eb0100bf 	cmp	x5, x1
+ffff8000080a2b48:	54000100 	b.eq	ffff8000080a2b68 <can_migrate_task.part.0+0x1c8>  // b.none
+ffff8000080a2b4c:	f9408263 	ldr	x3, [x19, #256]
+ffff8000080a2b50:	d29423e2 	mov	x2, #0xa11f                	// #41247
+ffff8000080a2b54:	f2a000e2 	movk	x2, #0x7, lsl #16
+ffff8000080a2b58:	f944a081 	ldr	x1, [x4, #2368]
+ffff8000080a2b5c:	cb030021 	sub	x1, x1, x3
+ffff8000080a2b60:	eb02003f 	cmp	x1, x2
+ffff8000080a2b64:	54fff9cc 	b.gt	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2b68:	b9403001 	ldr	w1, [x0, #48]
+ffff8000080a2b6c:	b9404c02 	ldr	w2, [x0, #76]
+ffff8000080a2b70:	6b01005f 	cmp	w2, w1
+ffff8000080a2b74:	54000388 	b.hi	ffff8000080a2be4 <can_migrate_task.part.0+0x244>  // b.pmore
+ffff8000080a2b78:	d503201f 	nop
+ffff8000080a2b7c:	52800014 	mov	w20, #0x0                   	// #0
+ffff8000080a2b80:	2a1403e0 	mov	w0, w20
+ffff8000080a2b84:	a94153f3 	ldp	x19, x20, [sp, #16]
+ffff8000080a2b88:	f94023f9 	ldr	x25, [sp, #64]
+ffff8000080a2b8c:	a8c57bfd 	ldp	x29, x30, [sp], #80
+ffff8000080a2b90:	d50323bf 	autiasp
+ffff8000080a2b94:	d65f03c0 	ret
+ffff8000080a2b98:	d503201f 	nop
+ffff8000080a2b9c:	52800014 	mov	w20, #0x0                   	// #0
+ffff8000080a2ba0:	17fffff8 	b	ffff8000080a2b80 <can_migrate_task.part.0+0x1e0>
+ffff8000080a2ba4:	f9419e60 	ldr	x0, [x19, #824]
+ffff8000080a2ba8:	52800014 	mov	w20, #0x0                   	// #0
+ffff8000080a2bac:	91000400 	add	x0, x0, #0x1
+ffff8000080a2bb0:	f9019e60 	str	x0, [x19, #824]
+ffff8000080a2bb4:	17ffffba 	b	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2bb8:	321e06f7 	orr	w23, w23, #0xc
+ffff8000080a2bbc:	b9002b20 	str	w0, [x25, #40]
+ffff8000080a2bc0:	b9004337 	str	w23, [x25, #64]
+ffff8000080a2bc4:	a9425bf5 	ldp	x21, x22, [sp, #32]
+ffff8000080a2bc8:	a94363f7 	ldp	x23, x24, [sp, #48]
+ffff8000080a2bcc:	17ffffb4 	b	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2bd0:	f941a260 	ldr	x0, [x19, #832]
+ffff8000080a2bd4:	52800014 	mov	w20, #0x0                   	// #0
+ffff8000080a2bd8:	91000400 	add	x0, x0, #0x1
+ffff8000080a2bdc:	f901a260 	str	x0, [x19, #832]
+ffff8000080a2be0:	17ffffaf 	b	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2be4:	d503201f 	nop
+ffff8000080a2be8:	d503201f 	nop
+ffff8000080a2bec:	17ffffac 	b	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+ffff8000080a2bf0:	b9402f21 	ldr	w1, [x25, #44]
+ffff8000080a2bf4:	8b010800 	add	x0, x0, x1, lsl #2
+ffff8000080a2bf8:	b940a401 	ldr	w1, [x0, #164]
+ffff8000080a2bfc:	11000421 	add	w1, w1, #0x1
+ffff8000080a2c00:	b900a401 	str	w1, [x0, #164]
+ffff8000080a2c04:	17fffff9 	b	ffff8000080a2be8 <can_migrate_task.part.0+0x248>
+ffff8000080a2c08:	f941a660 	ldr	x0, [x19, #840]
+ffff8000080a2c0c:	91000400 	add	x0, x0, #0x1
+ffff8000080a2c10:	f901a660 	str	x0, [x19, #840]
+ffff8000080a2c14:	17ffffa2 	b	ffff8000080a2a9c <can_migrate_task.part.0+0xfc>
+
+Disassembly of section .init.text:
+
+Disassembly of section .exit.text:

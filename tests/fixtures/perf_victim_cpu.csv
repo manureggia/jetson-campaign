@@ -1,0 +1,7 @@
+# started on Wed Sep  2 12:10:11 2026
+
+1267927528,,armv8_cortex_a78/cpu_cycles/,30000135424,100.00,42.264,M/sec
+1730467218,,armv8_cortex_a78/inst_retired/,30000136352,100.00,57.682,M/sec
+30000.14,msec,task-clock,30000137344,100.00,1.000,CPUs utilized
+341839869,,armv8_cortex_a78/stall_backend/,30000137472,100.00,11.395,M/sec
+160638052,,armv8_cortex_a78/stall_backend_mem/,30000137440,100.00,5.355,M/sec

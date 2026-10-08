@@ -1,0 +1,96 @@
+// Superseded by newidle-events.sh: installed bpftrace lacks offset support.
+// Only for kernel build ID 40157ac384cbddc13766cb58d82594769fbd09fb.
+// ARM64 offsets/registers verified in diagnostics/newidle-path-preparation/
+// newidle-disassembly.txt. Do not reuse after rebuilding the kernel.
+// Archived direct-bpftrace approach; use the tracefs procedure in the guide.
+// Argument 1: cyclictest worker TID. Five seconds, no BEGIN/END.
+
+kprobe:__arm64_sys_clock_nanosleep
+/tid == $1/
+{
+    @nanosleep = count();
+}
+
+kprobe:newidle_balance.constprop.0
+/tid == $1/
+{
+    if (@inside) { @errors["nested_entry"] = count(); }
+    @entries = count();
+    @inside = 1;
+    @reason = 0;
+    @lb = 0;
+}
+
+// +0x50: cbnz w0,return_zero; w0 = rq->ttwu_pending.
+kprobe:newidle_balance.constprop.0+80
+/tid == $1 && @inside/
+{
+    if (reg("r0") != 0) { @reason = 1; }
+}
+
+// +0x78: tbz w0,#0,return_zero; bit 0 = cpu_active(cpu).
+kprobe:newidle_balance.constprop.0+120
+/tid == $1 && @inside/
+{
+    if ((reg("r0") & 1) == 0) { @reason = 2; }
+}
+
+// +0x90: b.ls short_path, after cmp x1,x0.
+// x1 = avg_idle; x0 = 499999, implementing avg_idle < 500000 ns.
+kprobe:newidle_balance.constprop.0+144
+/tid == $1 && @inside/
+{
+    $idle = reg("r1");
+    $limit = reg("r0");
+    @avg_idle_ns = stats($idle);
+    @migration_cost_ns = $limit + 1;
+    if ($limit != 499999) { @errors["unexpected_idle_limit"] = count(); }
+    if ($idle <= $limit) { @reason = 3; }
+}
+
+// +0x9c: cbnz w0,long_path; w0 = overload value just read.
+// Reached only if avg_idle passed its check.
+kprobe:newidle_balance.constprop.0+156
+/tid == $1 && @inside/
+{
+    $overload = reg("r0");
+    @overload_checked[$overload] = count();
+    if ($overload == 0) { @reason = 4; } else { @reason = 5; }
+}
+
+// +0x244: b.cc domain_cost_stop; x1=avg_idle, x0=curr_cost+max_cost.
+kprobe:newidle_balance.constprop.0+580
+/tid == $1 && @inside/
+{
+    @domain_cost_check[reg("r1") < reg("r0")] = count();
+}
+
+// +0x24c: tbz w0,#0,skip_domain; bit 0 = SD_BALANCE_NEWIDLE.
+kprobe:newidle_balance.constprop.0+588
+/tid == $1 && @inside/
+{
+    @domain_enabled[reg("r0") & 1] = count();
+}
+
+kprobe:load_balance
+/tid == $1/
+{
+    if (@inside) {
+        @lb = @lb + 1;
+        @load_balance_inside = count();
+    } else {
+        @load_balance_outside = count();
+    }
+}
+
+kretprobe:newidle_balance.constprop.0
+/tid == $1 && @inside/
+{
+    @completed = count();
+    @paths[@reason, @lb] = count();
+    delete(@inside);
+    delete(@reason);
+    delete(@lb);
+}
+
+interval:s:5 { exit(); }

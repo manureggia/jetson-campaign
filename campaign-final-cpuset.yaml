@@ -1,0 +1,56 @@
+# Campagna finale: stessi parametri e workload di campaign-final-affinity.yaml.
+# Protocollo e lancio: docs/FINAL_TESTS.md oppure tools/run-final-tests.sh.
+# Tre blocchi randomizzati interni; segue la campagna con sola affinità.
+# Solo la CPU vittima corrente entra nella partizione esclusiva.
+name: final_thesis_cpuset
+victim_cores: [0, 3]
+isolcpu: [0, 3]
+perf_cpus: [4, 5]
+repetitions: 3
+randomization:
+  enabled: true
+  seed: 424242
+duration_s: 300
+cooldown_s: 0
+results_dir: results/final_tests
+perf_min_running_pct: 90
+
+# Sei eventi programmabili per passata, più cycles sul contatore dedicato.
+# task_clock è software; core conserva le latenze principali del report.
+# I prefissi victim_ mantengono separati task/cgroup e CPU/interferenti.
+perf_passes:
+  core: [cycles, instructions:u, instructions:k, backend_stall, memory_stall, memory_accesses, bus_accesses, task_clock]
+  victim_core: [cycles, instructions:u, instructions:k, backend_stall, memory_stall, memory_accesses, bus_accesses, task_clock]
+  cache_l1: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads, l1i_accesses, l1i_refills, l1i_long_misses]
+  victim_cache_l1: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads, l1i_accesses, l1i_refills, l1i_long_misses]
+  cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
+  victim_cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
+
+cyclictest:
+  command: cyclictest
+  priority: 90
+  interval_us: 1000
+  histogram_us: 10000
+
+scenarios:
+  baseline:
+    enabled: true
+    warmup_s: 5
+  interfgen:
+    enabled: true
+    placement: same_cluster
+    warmup_s: 5
+    command: >
+      /home/nvidia/hesoc-mark/membench/meminterf
+      --size=128 --iterations=1000000 --test=memcpy
+  demo:
+    enabled: true
+    placement: same_cluster
+    profile: demos/cem_final.yaml
+
+profiling:
+  enabled: false
+recovery:
+  max_retries: 2
+llm:
+  enabled: false

@@ -1,0 +1,323 @@
+# ESEMPIO COMPLETO DELLA CONFIGURAZIONE SUPPORTATA DA jetson_tests
+# -----------------------------------------------------------------------------
+# Le righe non commentate formano una campagna valida: INTERFGEN BASE + DEMO BASE,
+# core 0, una passata da 30 s ciascuno, soli contatori instructions:u/k.
+# Le alternative commentate documentano tutte le altre opzioni dello schema.
+# Le impostazioni sconosciute sono rifiutate; usare booleani true/false, numeri
+# per durate/priorità e liste YAML per CPU, eventi, comandi e feature.
+#
+# Controllo offline, senza avviare processi né contattare la Jetson:
+#   python -m jetson_tests plan --config example.yaml
+# Preflight remoto (perf, CPU, file DEMO, permessi e, se richiesto, helper cgroup):
+#   python -m jetson_tests doctor --config example.yaml
+# Nuova campagna (esegue anche il preflight):
+#   python -m jetson_tests run --config example.yaml
+# doctor stampa il percorso da usare con resume per riutilizzare la sua campagna.
+# run --scenario demo oppure --core 0 filtra le acquisizioni; sono opzioni CLI.
+# L'host SSH è l'alias jetson-codex e non è configurabile qui.
+#
+# Il runner oggi avvia e analizza cyclictest. Il prefisso victim_ indica lo scope
+# della misura, NON aggiunge un'interfaccia per vittime arbitrarie: un altro
+# programma richiede adattare comando, controlli e parser nel runner.
+
+# IDENTITÀ, CPU E ISOLAMENTO
+# Nome: lettere ASCII, cifre, _ e -; default jetson-campaign.
+# Diventa il nome della cartella locale/remota; collisioni aggiungono _1, _2, ...
+name: example
+
+# CPU vittima: lista non vuota di interi >= 0, senza duplicati. Default [0, 3].
+# Ogni scenario viene ripetuto separatamente su ciascuna CPU, non in parallelo.
+victim_cores: [0]
+
+# Default []: sola affinità CPU. [0] (oppure lo scalare 0) aggiunge una partizione
+# cpuset cgroup v2 esclusiva quando si misura CPU0. Deve essere un sottoinsieme
+# di victim_cores. L'helper installato e autorizzato è descritto nel README.
+# Si applica a TUTTI gli scenari abilitati per quelle CPU nella campagna.
+# Per confrontare DEMO normale e isolata su CPU0 servono due campagne YAML.
+# Non modifica automaticamente affinità IRQ o parametri di boot.
+isolcpu: []
+
+# Affinità dei frontend perf, NON CPU su cui contare gli eventi. Default [].
+# Con [] i monitor separati non hanno una maschera esplicita; il perf che avvolge
+# la vittima non isolata eredita la CPU vittima. Qui riserviamo core 4 a perf.
+# Evitare sovrapposizioni con vittima e interferenti. Se ci sono conflitti il
+# controller chiede una scelta su Telegram; dopo 600 s tenta CPU libere per tutta
+# la matrice, altrimenti si ferma. La topologia viene verificata da doctor.
+perf_cpus: [4]
+
+# DURATA, RIPETIZIONI, LIMITI E OUTPUT
+# Interi > 0; default repetitions=1, duration_s=300.
+# Ogni ripetizione esegue tutte le passate perf configurate.
+repetitions: 1
+duration_s: 30
+# Pausa dopo ogni passata, secondi >= 0; default 10.
+cooldown_s: 2
+# Polling del controller via SSH, secondi > 0; default 2.
+# Non cambia il periodo di risveglio della vittima.
+poll_s: 2
+# Margine per completare la misura/attendere i monitor, secondi > 0; default 30.
+# Il worker ha anche un timeout complessivo calcolato dal runner.
+timeout_grace_s: 30
+# Attesa di arresto dei processi prima del cleanup forzato, > 0; default 10.
+# La DEMO può sovrascriverla con definition.shutdown_timeout_s.
+shutdown_timeout_s: 10
+# Spazio libero minimo sul filesystem dei risultati sulla Jetson, GB > 0;
+# default 2. Non limita la dimensione massima degli output.
+min_free_gb: 2
+# Directory locale, relativa alla repository oppure assoluta; default results.
+# Il workspace remoto resta /home/nvidia/codex-work/<nome-campagna>.
+results_dir: results
+
+# HOOK DI CAMPAGNA: liste di comandi shell, default [].
+# Eseguiti sulla Jetson come nvidia, nella root remota della campagna.
+# Variabili disponibili: JETSON_CAMPAIGN_ROOT e JETSON_CAMPAIGN_ID.
+# pre: una volta prima della matrice; post: a matrice completa oppure durante
+# una chiusura anomala senza worker attivi. Un run filtrato riuscito può lasciare
+# il pre-hook attivo fino al completamento della matrice con resume.
+# Ogni comando ha timeout max(60, timeout_grace_s); un exit code nonzero è errore.
+# Per comandi privilegiati occorrono sudo -n esplicito e autorizzazione già
+# predisposta. Il runner non aggiunge sudo ai comandi configurati.
+command-pre-test: []
+# Esempio alternativo:
+# command-pre-test:
+#   - 'printf "%s\n" "$JETSON_CAMPAIGN_ID" > campaign-start.txt'
+command-post-test: []
+# command-post-test:
+#   - 'date -Iseconds > campaign-end.txt'
+
+# CONTATORI PERF E PASSATE
+# Soglia percentuale minima time_running/time_enabled: > 0 e <= 100, default 90.
+# Misure con multiplexing sotto soglia non sono accettate come conteggi validi.
+perf_min_running_pct: 90
+
+# Randomizzazione opzionale delle condizioni CPU/scenario per blocco (ripetizione).
+# L'ordine delle passate PMU resta invariato; profiling dopo tutti i blocchi.
+# Omettere questa voce o lasciare enabled: false per conservare l'ordine originale.
+# Con enabled: true è richiesto un seed intero >= 0; ordine salvato e mantenuto al resume.
+randomization:
+  enabled: false
+  seed: 424242
+
+# perf_passes è OPZIONALE. Se presente SOSTITUISCE le 12 passate predefinite:
+# - ogni chiave è una passata di duration_s secondi, nell'ordine di scrittura;
+# - ogni lista contiene gli eventi acquisiti insieme nella stessa passata;
+# - victim_<nome> misura il processo vittima con ereditarietà verso i suoi thread
+#   e figli; con isolcpu misura dall'esterno il cgroup della vittima su quella CPU;
+# - un nome SENZA victim_ misura l'intera CPU vittima e, quando presenti, i
+#   processi interferenti, con monitor distinti nella stessa passata;
+# - nomi: iniziale a-z, poi a-z, cifre o _; vietati profiling, victim_ senza
+#   suffisso e il vecchio prefisso task_ (rinominarlo in victim_);
+# - niente mappe/liste vuote né eventi duplicati nella stessa lista;
+# - la stessa metrica può comparire in passate diverse;
+# - niente suddivisione automatica in base ai registri PMU: aggiungere passate
+#   se gli eventi scelti causano troppo multiplexing.
+# La latenza principale nel report viene dalla passata core se esiste, altrimenti
+# dalla prima passata elencata. Tutte le misure conservano la propria finestra.
+perf_passes:
+  victim_instructions: [instructions:u, instructions:k]
+  # Per aggiungere una seconda finestra della sola vittima:
+  # victim_cycles: [cycles:u, cycles:k]
+  # Per misurare tutta la CPU vittima e anche gli interferenti:
+  # cpu_instructions: [instructions:u, instructions:k]
+  # Per confrontare i branch ritirati con quelli predetti erroneamente:
+  # victim_branches: [branches_retired, branch_mispredictions_retired]
+
+# CATALOGO COMPLETO AMMESSO (chiavi logiche, non stringhe -e arbitrarie):
+# cycles          -> cpu_cycles        0x11: cicli del core.
+# instructions    -> inst_retired      0x08: istruzioni ritirate.
+# backend_stall   -> stall_backend     0x24: stall del backend.
+# memory_stall    -> stall_backend_mem 0x4005: stall backend legati alla memoria.
+# memory_accesses -> mem_access        0x13: accessi dati alla memoria.
+# bus_accesses    -> bus_access        0x19: beat dati core/SCU, NON byte DRAM.
+# bus_cycles      -> bus_cycles        0x1d: su A78AE duplica CPU_CYCLES.
+# l1d_accesses    -> l1d_cache          0x04: accessi cache L1 dati.
+# l1d_refills     -> l1d_cache_refill   0x03: refill cache L1 dati.
+# l1d_long_miss_reads -> l1d_cache_lmiss_rd 0x39: miss read L1D a lunga latenza.
+# l1i_accesses    -> l1i_cache          0x14: accessi L1 istruzioni, include L0.
+# l1i_refills     -> l1i_cache_refill   0x01: refill cache L1 istruzioni.
+# l1i_long_misses -> l1i_cache_lmiss 0x4006: miss L1I a lunga latenza.
+# l2_accesses     -> l2d_cache          0x16: accessi cache L2 unificata.
+# l2_refills      -> l2d_cache_refill   0x17: refill cache L2.
+# l2_long_miss_reads -> l2d_cache_lmiss_rd 0x4009: miss read L2 a lunga latenza.
+# l3_accesses     -> l3d_cache          0x2b: accessi L3 attribuibili al core.
+# l3_refills      -> l3d_cache_refill   0x2a: refill con dati da fuori cluster.
+# l3_long_miss_reads -> l3d_cache_lmiss_rd 0x400b: miss read L3 a lunga latenza.
+# branch_predictions -> br_pred 0x12: branch prevedibili eseguiti speculativamente.
+# branch_mispredictions -> br_mis_pred 0x10: branch speculativi mal predetti.
+# branches_retired -> br_retired 0x21: branch architetturalmente eseguiti.
+# branch_mispredictions_retired -> br_mis_pred_retired 0x22:
+#   branch ritirati mal predetti, con flush della pipeline.
+# task_clock      -> task-clock: tempo CPU, evento software; NON durata wall-clock.
+# Tutti gli eventi hardware accettano :u (user) oppure :k (kernel); senza suffisso
+# non si applica quella separazione. task_clock NON accetta suffissi nello schema.
+# Non sono ammessi :uk, :h, eventi raw, gruppi perf o nomi esterni al catalogo.
+# instructions:k conta nel contesto monitorato, non le sole syscall né tutto il
+# kernel della macchina. CPU intera e processo/cgroup sono scope differenti.
+# Il mapping armv8_cortex_a78 viene controllato in sysfs. Eventi non disponibili
+# hanno valore null e motivo esplicito. Dettagli e limiti: docs/AUDIT.md.
+# I monitor CPU/cgroup partono prima della vittima: finestre non identiche al
+# nanosecondo; comandi e timestamp vengono conservati nei raw.
+#
+# Per ripristinare la configurazione completa omettere perf_passes, NON usare {}.
+# Equivalente esplicito delle 12 passate predefinite (sostituisce il blocco sopra):
+# perf_passes:
+#   core: [cycles, instructions, task_clock, backend_stall, memory_stall]
+#   victim_core: [cycles, instructions, task_clock, backend_stall, memory_stall]
+#   memory: [cycles, memory_accesses, bus_accesses, bus_cycles]
+#   victim_memory: [cycles, memory_accesses, bus_accesses, bus_cycles]
+#   l1d: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads]
+#   l1i: [cycles, l1i_accesses, l1i_refills, l1i_long_misses]
+#   l2: [cycles, l2_accesses, l2_refills, l2_long_miss_reads]
+#   l3: [cycles, l3_accesses, l3_refills, l3_long_miss_reads]
+#   victim_l1d: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads]
+#   victim_l1i: [cycles, l1i_accesses, l1i_refills, l1i_long_misses]
+#   victim_l2: [cycles, l2_accesses, l2_refills, l2_long_miss_reads]
+#   victim_l3: [cycles, l3_accesses, l3_refills, l3_long_miss_reads]
+# I long miss sono soltanto quelli a lunga latenza; refill resta una metrica
+# diversa. Eventi branch supportati non vengono inseriti nel default.
+
+# VITTIMA ATTUALMENTE SUPPORTATA: CYCLICTEST
+cyclictest:
+  # Un SOLO eseguibile (nome nel PATH oppure percorso); default cyclictest.
+  # Niente argomenti, pipeline o script shell qui. Deve accettare il protocollo
+  # cyclictest: il runner imposta CPU, un thread, FIFO, memoria bloccata, durata,
+  # istogramma e output JSON. Non basta indicare un benchmark differente.
+  command: cyclictest
+  # Priorità FIFO, intero 1..99, default 90; richiede permessi RT sulla Jetson.
+  priority: 90
+  # Intervallo fra risvegli in microsecondi, intero > 0, default 1000.
+  interval_us: 1000
+  # Limite istogramma in microsecondi, intero > 0, default 1000. Se ci sono
+  # overflow non vengono inventati deviazione standard e quantili completi.
+  histogram_us: 1000
+  # Default []; ammessi SOLO --verbose/-v e --unbuffered/-u.
+  # Si accetta anche la stringa "--verbose --unbuffered".
+  extra_args: []
+
+# SCENARI: gli unici nomi ammessi sono baseline, interfgen e demo.
+# Ordine: baseline, interfgen, demo, poi CPU e ripetizioni. Uno scenario omesso
+# non viene eseguito; omettendo l'intero blocco si ottiene solo baseline.
+# Dentro uno scenario presente, enabled ha default true.
+scenarios:
+  baseline:
+    # Vittima senza workload interferente avviato dal runner.
+    enabled: false
+    # Attesa prima della misura, secondi; default operativo 0.
+    warmup_s: 0
+
+  interfgen:
+    enabled: true
+    # same_cluster: CPU che condividono il cluster/L3 con la vittima, esclusa lei.
+    # system: tutte le CPU online tranne la vittima.
+    # explicit: usa cpus; lista non vuota, online e senza CPU vittima.
+    # Default per INTERFGEN: same_cluster. Verificare eventuali conflitti perf_cpus.
+    placement: same_cluster
+    # cpus: [1, 2, 3]  # Da attivare insieme a placement: explicit.
+    # Secondi >= 0 dopo l'avvio degli interferenti; default 1.
+    warmup_s: 1
+    # Comando bash obbligatorio: una copia PER CPU interferente, fissata a quella
+    # CPU. Deve restare attivo durante la misura. Directory: workspace temporaneo.
+    command: >
+      /home/nvidia/hesoc-mark/membench/meminterf
+      --size=128 --iterations=1000000 --test=memcpy
+
+  demo:
+    enabled: true
+    # Stesse tre modalità; default DEMO: system. Qui scegliamo same_cluster.
+    # I processi DEMO condividono l'intera maschera, non una copia per CPU.
+    placement: same_cluster
+    # cpus: [1, 2, 3]  # Solo per placement: explicit.
+    # Due modi ALTERNATIVI per descrivere la DEMO:
+    # 1) profile: percorso YAML LOCALE, relativo a questo file o assoluto.
+    #    Il file esterno contiene le stesse chiavi di definition qui sotto.
+    #    Per usarlo eliminare definition e decommentare:
+    # profile: ../demos/cem_fast.yaml
+    # 2) definition: profilo inline, usato qui per documentare tutti i campi.
+    # Se si specificano entrambi, il loader sostituisce definition con profile.
+    definition:
+      name: cem-example  # Etichetta opzionale del profilo.
+      # Script sulla JETSON, sourced in bash prima dei processi/readiness;
+      # opzionale, senza default. Non è un file da copiare dal Mac.
+      environment_script: /opt/tk/tk-install/setup.sh
+      # Copie di file/directory dalla Jetson nel workspace isolato della run.
+      # Mappa destinazione relativa -> sorgente remota assoluta; default {}.
+      # Niente .., destinazioni sovrapposte o symlink a directory nelle risorse.
+      # I comandi possono scrivere sulle copie; output nuovi/modificati sono raccolti.
+      resources:
+        roudi.toml: /home/nvidia/roudi.toml
+        cem: /home/nvidia/cem
+        cem_multi.mcap: /home/nvidia/cem_multi.mcap
+      # Warmup DOPO la readiness di tutti i processi, >= 0; default 30 s.
+      warmup_s: 5
+      # Timeout readiness per processo, > 0; default 120 s.
+      startup_timeout_s: 120
+      # Cleanup DEMO, > 0; default 10 s (override del valore globale).
+      shutdown_timeout_s: 10
+      # Nomi aggiuntivi di eseguibili da cercare come workload estranei.
+      # Default []; il runner rifiuta conflitti, non termina processi estranei.
+      foreign_process_names: []
+      # Lista non vuota; processi avviati nell'ordine indicato e fermati dopo
+      # ogni passata. Ogni nome deve essere unico: lettere, numeri, _ e -.
+      processes:
+        - name: roudi
+          # Bash sulla Jetson, cwd = workspace con le copie delle risorse.
+          command: /opt/tk/deps/bin/iox-roudi -l info -k 1 -m on -x off -c roudi.toml
+          # Readiness opzionale: scegliere AL MASSIMO UNO dei campi seguenti.
+          # Regex cercata negli ultimi 64 KiB di STDOUT (non stderr):
+          # ready_log_regex: 'RouDi is ready for clients'
+          # Oppure comando bash: exit code 0 significa pronto; viene riprovato.
+          # ready_command: 'test -S /percorso/del/socket'
+          # Senza entrambi: attesa iniziale di 5 s con controllo che resti vivo.
+          # Default false. true riavvia solo dopo uscita 0; errori restano errori.
+          repeat_on_success: false
+        - name: segmentation
+          command: export DISPLAY=:0; tkHPick_instance_segmentation -conf cem/config.yaml
+        - name: pose
+          command: export DISPLAY=:0; tkHPick_pose_estimation -conf cem/config.yaml
+        - name: player
+          command: tkCore_bag_play cem_multi.mcap
+          repeat_on_success: true  # Ripete il playback finché la passata è attiva.
+
+# PROFILING: acquisizioni AGGIUNTIVE e separate dalle passate di perf stat.
+# Non viene disabilitato automaticamente impostando perf_passes.
+profiling:
+  enabled: false  # Default true: perf record a 99 Hz, cpu-clock, DWARF 8192.
+  repetitions: 1  # Intero > 0, default 1, indipendente dalle repetitions globali.
+  duration_s: 30  # Intero > 0, default uguale a duration_s globale.
+# Frequenza, evento di sampling e call graph sono fissi nel runner: non ci sono
+# altre chiavi YAML. Il profiling campiona l'intera CPU vittima, genera flamegraph
+# e conserva perf.data; non entra negli aggregati delle latenze di measurement.
+
+# RECOVERY: budget di tentativi aggiuntivi, intero >= 0; default 2.
+# 0 disabilita i retry; non tutti gli errori sono recuperabili automaticamente.
+recovery:
+  max_retries: 2
+
+# INTERPRETAZIONE OPZIONALE DEI LOG: Ollama contattato dal controller sul Mac.
+# Non decide conteggi, statistiche, timeout o comandi shell.
+llm:
+  enabled: false  # Default false; le misure non richiedono un LLM.
+  backend: ollama  # Valori: ollama oppure none; default ollama.
+  model: qwen3:8b  # Stringa modello già disponibile in Ollama; è il default.
+  url: http://localhost:11434  # Endpoint visto dal controller; valore predefinito.
+  confidence_threshold: 0.85  # Intervallo [0, 1]; default 0.85.
+  timeout_s: 30  # Secondi > 0; default 30.
+  # Feature ammesse: error_classification (diagnosi esito/log),
+  # ambiguous_progress (interpretazione opzionale del progresso durante la run).
+  # Default [error_classification]; [] disattiva le richieste di queste feature.
+  features: [error_classification]
+  # features: [error_classification, ambiguous_progress]
+  # Sottoinsieme di features; default []. Se non vuoto, richiede enabled: true
+  # e backend: ollama. Un'interpretazione richiesta ma indisponibile/non valida
+  # può fermare il flusso e richiedere revisione umana.
+  required_features: []
+
+# DURATA DI QUESTO ESEMPIO: 2 scenari x 1 CPU x 1 ripetizione x 1 passata x 30 s
+# = 60 s di acquisizione, più preflight, avvio/readiness, warmup, cooldown e retry.
+# Ogni passata riavvia vittima e workload interferenti; aggiungere voci aumenta
+# il tempo totale. plan calcola le acquisizioni, senza i tempi accessori.
+# Output: raw perf/JSON cyclictest/IRQ/telemetria, report/runs.csv, runs.json,
+# provenance.csv. Lo scope nei file resta victim_task; il nome della passata
+# diventa pass_victim_instructions. Nessun altro flag YAML controlla il report.
+# Gli script storici analysis/ assumono protocollo completo e finestre da 300 s;
+# per questa selezione personalizzata usare il report standard del runner.

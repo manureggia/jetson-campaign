@@ -1,0 +1,38 @@
+name: istr-kernel-demo-core0
+victim_cores: [0]
+isolcpu: []
+perf_cpus: [4]
+repetitions: 1
+duration_s: 300
+cooldown_s: 2
+results_dir: results
+perf_min_running_pct: 90
+
+# Una passata: istruzioni user/kernel di cyclictest e branch prediction della vittima.
+# Le coppie speculative e retired hanno semantiche diverse: non mescolare i rapporti.
+# I branch senza suffisso sommano user e kernel; aggiungere :k per limitarli al kernel.
+perf_passes:
+  victim_kernel_branches:
+    - instructions:u
+    - instructions:k
+    - branch_predictions
+    - branch_mispredictions
+    - branches_retired
+    - branch_mispredictions_retired
+
+cyclictest:
+  command: cyclictest
+  priority: 90
+  interval_us: 1000
+  histogram_us: 1000
+
+scenarios:
+  demo:
+    enabled: true
+    placement: same_cluster
+    profile: ../demos/cem.yaml
+
+profiling:
+  enabled: true
+llm:
+  enabled: false

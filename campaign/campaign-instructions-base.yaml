@@ -1,0 +1,40 @@
+name: instructions-base-core0
+victim_cores: [0]
+isolcpu: []
+perf_cpus: [4]
+repetitions: 1
+duration_s: 30
+cooldown_s: 2
+results_dir: results
+
+# Una sola finestra; contatori limitati al task cyclictest, separati per modo.
+perf_passes:
+  victim_instructions: [instructions:u, instructions:k]
+
+cyclictest:
+  command: cyclictest
+  priority: 90
+  interval_us: 1000
+  histogram_us: 1000
+
+scenarios:
+  baseline:
+    enabled: false
+  interfgen:
+    enabled: true
+    placement: same_cluster
+    warmup_s: 1
+    command: >
+      /home/nvidia/hesoc-mark/membench/meminterf
+      --size=128 --iterations=1000000 --test=memcpy
+  demo:
+    enabled: true
+    placement: same_cluster
+    profile: ../demos/cem_fast.yaml
+
+profiling:
+  enabled: false
+recovery:
+  max_retries: 2
+llm:
+  enabled: false

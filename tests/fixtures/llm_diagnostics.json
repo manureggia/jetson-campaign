@@ -1,0 +1,74 @@
+[
+  {
+    "id": "benign_roudi_warning",
+    "source": "confronto_irq_post: PASS DEMO",
+    "context": {
+      "state": {"phase": "COMPLETE", "outcome": "PASS"},
+      "failure": {},
+      "logs": [{"file": "pass_core/roudi.stderr.txt", "tail": "[Info]: RouDi is ready for clients\n[Warn]: Unknown application play_publisher requested shutdown preparation."}]
+    },
+    "allowed_actions": ["continue", "request_human_review"],
+    "expected_classifications": ["normal"],
+    "expected_actions": ["continue"]
+  },
+  {
+    "id": "perf_process_disappeared",
+    "source": "confronto_orin core0/demo attempt_003",
+    "context": {
+      "state": {"phase": "COMPLETE", "outcome": "FAIL", "pass": "l3"},
+      "failure": {"category": "exit_code", "message": "perf failed: perf_interferer"},
+      "logs": [{"file": "pass_l3/perf_interferer.stderr.txt", "tail": "The sys_perf_event_open() syscall returned with 3 (No such process) for event armv8_cortex_a78/cpu_cycles/."}]
+    },
+    "allowed_actions": ["continue", "request_human_review"],
+    "expected_classifications": ["recoverable_error"],
+    "expected_actions": ["continue"]
+  },
+  {
+    "id": "player_sigsegv",
+    "source": "confronto_orin core0/demo attempt_002",
+    "context": {
+      "state": {"phase": "COMPLETE", "outcome": "FAIL"},
+      "failure": {"category": "exit_code", "message": "Required workload player exited (139)"},
+      "logs": [{"file": "pass_core/player.stderr.txt", "tail": "NvMMLiteBlockCreate : BlockType = 277\nprocess terminated with exit code 139"}]
+    },
+    "allowed_actions": ["continue", "request_human_review"],
+    "expected_classifications": ["unrecoverable_error"],
+    "expected_actions": ["request_human_review"]
+  },
+  {
+    "id": "affinity_mismatch",
+    "source": "confronto_orin core0/demo attempt_001",
+    "context": {
+      "state": {"phase": "COMPLETE", "outcome": "FAIL"},
+      "failure": {"category": "affinity", "message": "Affinity mismatch: pose allowed CPUs [0, 1, 2, 3, 4, 5]"},
+      "logs": [{"file": "worker.stderr.txt", "tail": "Required process pose escaped the selected CPU placement."}]
+    },
+    "allowed_actions": ["continue", "request_human_review"],
+    "expected_classifications": ["unrecoverable_error"],
+    "expected_actions": ["request_human_review"]
+  },
+  {
+    "id": "campaign_lock_busy",
+    "source": "confronto_orin core0/baseline attempt_001",
+    "context": {
+      "state": {"phase": "COMPLETE", "outcome": "FAIL"},
+      "failure": {"category": "external", "message": "Another campaign holds the Jetson lock"},
+      "logs": [{"file": "worker.stderr.txt", "tail": "BlockingIOError: [Errno 11] Resource temporarily unavailable"}]
+    },
+    "allowed_actions": ["continue", "request_human_review"],
+    "expected_classifications": ["recoverable_error"],
+    "expected_actions": ["request_human_review"]
+  },
+  {
+    "id": "realtime_limit_missing",
+    "source": "release-validation baseline attempt_001",
+    "context": {
+      "state": {"phase": "COMPLETE", "outcome": "FAIL"},
+      "failure": {"category": "external", "message": "Precheck failed: Insufficient FIFO RLIMIT_RTPRIO; no sudo invoked"},
+      "logs": [{"file": "worker.stderr.txt", "tail": "The realtime scheduling preflight failed before acquisition."}]
+    },
+    "allowed_actions": ["continue", "request_human_review"],
+    "expected_classifications": ["unrecoverable_error"],
+    "expected_actions": ["request_human_review"]
+  }
+]

@@ -1,0 +1,22 @@
+name: cem
+environment_script: /opt/tk/tk-install/setup.sh
+
+resources:
+  roudi.toml: /home/nvidia/roudi.toml
+  cem: /home/nvidia/cem
+  cem_multi.mcap: /home/nvidia/cem_multi.mcap
+
+warmup_s: 5
+startup_timeout_s: 120
+shutdown_timeout_s: 10
+
+processes:
+  - name: roudi
+    command: /opt/tk/deps/bin/iox-roudi -l info -k 1 -m on -x off -c roudi.toml
+  - name: segmentation
+    command: export DISPLAY=:0; tkHPick_instance_segmentation -conf cem/config.yaml
+  - name: pose
+    command: export DISPLAY=:0; tkHPick_pose_estimation -conf cem/config.yaml
+  - name: player
+    command: tkCore_bag_play cem_multi.mcap
+    repeat_on_success: true

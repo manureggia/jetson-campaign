@@ -1,0 +1,45 @@
+name: post_irq_orin
+victim_cores: [0, 3]
+repetitions: 3
+duration_s: 300
+cooldown_s: 2
+results_dir: results
+
+cyclictest:
+  command: cyclictest
+  priority: 90
+  interval_us: 1000
+  histogram_us: 1000
+
+scenarios:
+  baseline:
+    enabled: true
+  interfgen:
+    enabled: true
+    placement: same_cluster
+    warmup_s: 2
+    command: >
+      /home/nvidia/hesoc-mark/membench/meminterf
+      --size=128 --iterations=1000000 --test=memcpy
+  demo:
+    enabled: true
+    placement: same_cluster
+    profile: ../demos/cem.yaml
+
+profiling:
+  enabled: true
+  repetitions: 1
+  duration_s: 300
+
+recovery:
+  max_retries: 2
+
+llm:
+  enabled: true
+  backend: ollama
+  model: qwen3.5:9b
+  url: http://localhost:11434
+  confidence_threshold: 0.85
+  timeout_s: 30
+  features: [error_classification]
+  required_features: []

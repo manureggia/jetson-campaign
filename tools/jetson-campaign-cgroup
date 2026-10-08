@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Narrow root helper for jetson-campaign's cgroup-v2 CPU partitions."""
+import argparse
+import errno
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import resource
+
+
+ROOT = Path("/sys/fs/cgroup")
+NAME = re.compile(r"jetson-campaign-[0-9a-f]{16}")
+RLIMIT_RTPRIO = getattr(resource, "RLIMIT_RTPRIO", 14)  # Linux resource.h
+
+
+def group(name):
+    if not NAME.fullmatch(name):
+        raise ValueError("invalid cgroup name")
+    return ROOT / name
+
+
+def write(path, value):
+    path.write_text(str(value) + "\n")
+
+
+def expand(mask):
+    cpus = set()
+    for part in mask.split(","):
+        bounds = [int(value) for value in part.split("-")]
+        cpus.update(range(bounds[0], bounds[-1] + 1))
+    return cpus
+
+
+def set_rtprio(value):
+    if not 0 <= value <= 99:
+        raise ValueError("rtprio must be between 0 and 99")
+    resource.setrlimit(RLIMIT_RTPRIO, (value, value))
+
+
+def probe(rtprio):
+    controllers = (ROOT / "cgroup.controllers").read_text().split()
+    if "cpuset" not in controllers or not (ROOT / "cpuset.cpus.effective").is_file():
+        raise RuntimeError("cgroup v2 cpuset controller unavailable")
+    cpus = expand((ROOT / "cpuset.cpus.effective").read_text().strip())
+    if not cpus:
+        raise RuntimeError("no effective CPU is available")
+    name = f"jetson-campaign-{os.getpid():016x}"
+    state = create(name, min(cpus))
+    delete(name)
+    set_rtprio(rtprio)
+    print(json.dumps({"root": str(ROOT), "controllers": controllers,
+                      "cpus": (ROOT / "cpuset.cpus.effective").read_text().strip(),
+                      "partition": state, "exclusive_partition": True,
+                      "scheduler_isolated": state == "isolated", "rtprio": rtprio}))
+
+
+def create(name, cpu):
+    target = group(name)
+    online = expand((ROOT / "cpuset.cpus.effective").read_text().strip())
+    if cpu not in online:
+        raise ValueError(f"CPU{cpu} is not available")
+    target.mkdir()
+    try:
+        write(target / "cpuset.mems", (ROOT / "cpuset.mems.effective").read_text().strip())
+        write(target / "cpuset.cpus", cpu)
+        try:
+            write(target / "cpuset.cpus.partition", "isolated")
+        except OSError as exc:
+            if exc.errno != errno.EINVAL:
+                raise
+            write(target / "cpuset.cpus.partition", "root")
+        state = (target / "cpuset.cpus.partition").read_text().strip()
+        if state not in ("isolated", "root"):
+            raise RuntimeError("exclusive cpuset partition is unsupported or invalid: " + state)
+        return state
+    except BaseException:
+        try:
+            write(target / "cpuset.cpus.partition", "member")
+            target.rmdir()
+        except OSError:
+            pass
+        raise
+
+
+def execute(name, argv, rtprio):
+    target = group(name)
+    if (target / "cpuset.cpus.partition").read_text().strip() not in ("isolated", "root"):
+        raise RuntimeError("cgroup is not an exclusive partition")
+    write(target / "cgroup.procs", os.getpid())
+    set_rtprio(rtprio)
+    uid, gid = int(os.environ["SUDO_UID"]), int(os.environ["SUDO_GID"])
+    account = pwd.getpwuid(uid)
+    os.initgroups(account.pw_name, gid)
+    os.setgid(gid)
+    os.setuid(uid)
+    os.environ.update(HOME=account.pw_dir, USER=account.pw_name, LOGNAME=account.pw_name)
+    os.execvp(argv[0], argv)
+
+
+def status(name):
+    target = group(name)
+    print(json.dumps({"exists": target.is_dir(),
+                      "partition": (target / "cpuset.cpus.partition").read_text().strip() if target.is_dir() else None,
+                      "cpus": (target / "cpuset.cpus.effective").read_text().strip() if target.is_dir() else None,
+                      "pids": (target / "cgroup.procs").read_text().split() if target.is_dir() else []}))
+
+
+def delete(name):
+    target = group(name)
+    if not target.exists():
+        return
+    pids = (target / "cgroup.procs").read_text().split()
+    if pids:
+        raise RuntimeError("cgroup still contains processes: " + ",".join(pids))
+    write(target / "cpuset.cpus.partition", "member")
+    target.rmdir()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="operation", required=True)
+    probe_parser = sub.add_parser("probe")
+    probe_parser.add_argument("--rtprio", type=int, default=0)
+    create_parser = sub.add_parser("create")
+    create_parser.add_argument("name")
+    create_parser.add_argument("cpu", type=int)
+    for operation in ("status", "delete"):
+        child = sub.add_parser(operation)
+        child.add_argument("name")
+    execute_parser = sub.add_parser("exec")
+    execute_parser.add_argument("--rtprio", type=int, default=0)
+    execute_parser.add_argument("name")
+    execute_parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if os.geteuid() != 0:
+        parser.error("must run as root")
+    if args.operation == "probe":
+        probe(args.rtprio)
+    elif args.operation == "create":
+        create(args.name, args.cpu)
+    elif args.operation == "status":
+        status(args.name)
+    elif args.operation == "delete":
+        delete(args.name)
+    else:
+        command = args.command[1:] if args.command[:1] == ["--"] else args.command
+        if not command:
+            parser.error("exec requires a command after --")
+        execute(args.name, command, args.rtprio)
+
+
+if __name__ == "__main__":
+    main()

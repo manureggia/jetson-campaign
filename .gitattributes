@@ -1,0 +1,2 @@
+# Preserve the vendored upstream Perl sources, including their whitespace.
+tools/FlameGraph/*.pl -whitespace

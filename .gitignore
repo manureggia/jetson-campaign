@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+results/
+old_results/
+.DS_Store
+.telegram-state.json
+.telegram-state.lock
+.env
+.env.*
+
+# Acquisizioni locali, report generati e workspace di diagnostica.
+/output/
+/tmp/
+/ebpf-cyclictest.*/
+/lb-affinity.*/
+/newidle-branches.*/
+/newidle-instructions.*/
+/newidle-pmu.*/
+/overload-origin.*/
+/diagnostics/*
+
+# Piccole fixture del kernel richieste dai controlli offline sugli offset.
+!/diagnostics/load-balance-affinity-preparation/
+/diagnostics/load-balance-affinity-preparation/*
+!/diagnostics/load-balance-affinity-preparation/load_balance.disassembly.txt
+!/diagnostics/load-balance-affinity-preparation/can_migrate_task.disassembly.txt

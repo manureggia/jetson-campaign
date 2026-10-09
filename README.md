@@ -413,7 +413,8 @@ Profiling, tentativi falliti e risultati mancanti sono esclusi dagli aggregati p
 
 ## Ollama e test
 
-Per rigenerare il report con grafici CPU 0/CPU 3, PNG, SVG e PDF:
+Per rigenerare il report con grafici CPU 0/CPU 3 in SVG e impaginazione Markdown
+(PDF vettoriale opzionale con `--pdf`):
 [istruzioni e metodo](analysis/README.md). Il generatore opera sui raw locali verificati
 e separa i tentativi PASS dall'appendice con dati parziali.
 

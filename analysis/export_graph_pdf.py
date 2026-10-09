@@ -1,26 +1,15 @@
-"""Assemble the report's chart pages in a PDF, preserving their layout."""
-import json
+"""Regenerate the graphical report with its optional vector PDF."""
 from pathlib import Path
 import sys
-from reportlab.pdfgen import canvas
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from plot_campaign import build
 
 
 def export(directory):
     directory = Path(directory)
-    destination = directory / 'confronto_core0_core3.pdf'
-    pages = json.loads((directory / 'pages.json').read_text())
-    size = (1008, 604.8)
-    pdf = canvas.Canvas(str(destination), pagesize=size)
-    pdf.setTitle('Jetson Orin - confronto CPU 0 e CPU 3')
-    pdf.setAuthor('Campagna Jetson')
-    pdf.setSubject('Latenze, PMU, cache e interrupt; dati validi e appendice parziale')
-    for page in pages:
-        pdf.bookmarkPage(page['name'])
-        pdf.addOutlineEntry(page['title'], page['name'])
-        pdf.drawImage(str(directory / (page['name'] + '.png')), 0, 0, width=size[0], height=size[1])
-        pdf.showPage()
-    pdf.save()
-    print(destination)
+    build(directory.resolve().parents[1], pdf=True)
+    return directory / 'confronto_core0_core3.pdf'
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-"""Read-only inventory and bounded preflight probes; no sudo or system changes."""
+"""Hardware inventory and bounded preflight probes on idle boards."""
 import os
 import platform
 import resource
@@ -136,7 +136,8 @@ def doctor(c, directory, probe=True):
     for target, source in profile.get("resources", {}).items():
         if not Path(source).exists():
             info["errors"].append(f"Missing resource {target}: {source}")
-    if probe:
+    # Creating a probe cpuset can change affinities in an active campaign.
+    if probe and not foreign:
         manager = Processes(directory, time.monotonic() + 180)
         def execute(name, argv, timeout=15):
             try:

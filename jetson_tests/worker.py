@@ -179,10 +179,13 @@ def start_interferers(c, item, manager, workspace, directory, cpus):
 
 def cyclic_command(c, cpu, duration, directory):
     ct = c["cyclictest"]
+    # -N: latencies and histogram buckets in ns; without it cyclictest truncates to whole µs.
+    # -h is what fills the JSON histogram. Without --histfile the dense dump (one line per ns,
+    # 14 MB for 1 ms) goes to stdout, hence /dev/null: the JSON keeps every non-empty bucket.
     return [shlex.split(ct["command"])[0], "-a", str(cpu), "-t", "1", "-p", str(ct["priority"]),
-            "--policy=fifo", "-m", "-i", str(ct["interval_us"]), "-D", str(duration),
-            "-h", str(ct["histogram_us"]), "-q", f"--json={directory / 'cyclictest.json'}",
-            f"--histfile={directory / 'cyclictest.hist'}", *ct["extra_args"]]
+            "--policy=fifo", "-m", "-i", str(ct["interval_us"]), "-D", str(duration), "-N",
+            "-h", str(ct["histogram_us"] * 1000), "-q", f"--json={directory / 'cyclictest.json'}",
+            "--histfile=/dev/null", *ct["extra_args"]]
 
 
 def workload_command(c, cpu, duration, directory, pass_name, event_args, has_events,
@@ -268,7 +271,8 @@ def check_monitors(manager, monitors):
 
 def acquire(c, item, pass_name, catalog, manager, state, directory, interferers, isolated_group=None,
             perf_cpus=None):
-    # Only PID attachment can fail with ESRCH. Keep every discarded window
+    # PID attachment (perf -p) could fail with ESRCH; interferers are now counted CPU-wide,
+    # so this retry is a safety net only. Keep every discarded window
     # separately, then publish the successful pass at its usual report path.
     if pass_name == "profiling" or pass_name.startswith("victim_") or not interferers:
         return acquire_once(c, item, pass_name, catalog, manager, state, directory, interferers,
@@ -320,12 +324,13 @@ def acquire_once(c, item, pass_name, catalog, manager, state, directory, interfe
     args = [arg for event in events.values() for arg in ("-e", event)]
     if pass_name != "profiling" and not pass_name.startswith("victim_"):
         scopes = [("victim_cpu", ["-a", "-C", str(cpu)])]
-        manager.refresh()
-        pids = sorted({member["pid"] for job in interferers for member in manager.live_members(job)})
-        save_json(directory / "interferer_attachment.json", {"pids": pids, "inherit": True,
-                  "note": "Each existing TGID attached once; future children inherit. Disjoint from victim CPU."})
-        if pids:
-            scopes.append(("interferer", ["-p", ",".join(map(str, pids))]))
+        # CPU-wide on the interferer CPUs: per-task counters would be switched at every
+        # context switch of the workload and slow it down only in this pass.
+        interferer_cpus = sorted({c for job in interferers for c in (job["cpus"] or [])})
+        save_json(directory / "interferer_attachment.json", {"cpus": interferer_cpus, "scope": "cpu-wide",
+                  "note": "Counts everything running on the interferer CPUs, workload included. Disjoint from victim CPU."})
+        if interferer_cpus:
+            scopes.append(("interferer", ["-a", "-C", ",".join(map(str, interferer_cpus))]))
         for scope, scope_args in scopes:
             argv = ["perf", "stat", "--no-big-num", "-x,", *scope_args, *args,
                     "--timeout", str(duration * 1000), "-o", str(directory / f"perf_{scope}.csv")]

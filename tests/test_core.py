@@ -18,7 +18,7 @@ from jetson_tests.metrics import cyclictest, perf, interrupts, histogram_summary
 from jetson_tests.pmu import inventory
 from jetson_tests.report import aggregate, selected_attempts, generate
 from jetson_tests.transport import verify_download
-from jetson_tests.worker import cgroup_exec, cgroup_name, workload_command
+from jetson_tests.worker import cgroup_exec, cgroup_name, cyclic_command, workload_command
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,14 +38,72 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             cyclictest(ROOT / "tests/fixtures/cyclictest.json", 3)
 
+    def test_nanosecond_cyclictest_fixture(self):
+        # Real `cyclictest -N` output from the Jetson: buckets and summary in ns.
+        row = cyclictest(ROOT / "tests/fixtures/cyclictest_ns.json", 3)
+        self.assertEqual(row["samples"], 5000)
+        self.assertTrue(row["histogram_complete"])
+        self.assertEqual(row["resolution_ns"], 1)
+        self.assertAlmostEqual(row["min_us"], 2.085)
+        self.assertAlmostEqual(row["max_us"], 4.749)
+        self.assertAlmostEqual(row["reported_mean_us"], 2.61641)
+        self.assertAlmostEqual(row["mean_us"], row["reported_mean_us"], places=2)
+        self.assertTrue(2.085 <= row["p50_us"] <= row["p99_us"] <= 4.749)
+
+    def test_cyclictest_command_uses_nanoseconds(self):
+        c = validate({"victim_cores": [3], "cyclictest": {"histogram_us": 1000}})
+        argv = cyclic_command(c, 3, 60, self.out)
+        self.assertIn("-N", argv)
+        self.assertEqual(argv[argv.index("-h") + 1], "1000000")
+        self.assertIn("--histfile=/dev/null", argv)
+
     def test_histogram_overflow(self):
         data = json.loads((ROOT / "tests/fixtures/cyclictest.json").read_text())
-        data["thread"]["0"]["cycles"] += 1
+        data["thread"]["0"]["cycles"] += 100  # 100 samples above the histogram range
         save_json(self.out / "ct.json", data)
         result = cyclictest(self.out / "ct.json", 0)
         self.assertIsNone(result["std_us"])
-        self.assertIsNone(result["p99_us"])
-        self.assertEqual(result["overflow_samples"], 1)
+        self.assertEqual(result["overflow_samples"], 100)
+        self.assertEqual(result["max_us"], 53)
+        # Rank 29799 of 30100 is inside the histogram, rank 30070 falls among the overflows.
+        self.assertIsNotNone(result["p99_us"])
+        self.assertIsNone(result["p99_9_us"])
+
+    def pass_directory(self, name, softirq_sched=(0, 0), cgroup=None, extra_cycles=0):
+        directory = self.out / name
+        directory.mkdir()
+        save_json(directory / "measurement.json", {"scopes": {}, "cgroup": cgroup,
+                  "cyclictest_start_monotonic": 100.0, "cyclictest_end_monotonic": 130.0})
+        data = json.loads((ROOT / "tests/fixtures/cyclictest.json").read_text())
+        data["thread"]["0"]["cycles"] += extra_cycles
+        save_json(directory / "cyclictest.json", data)
+        for suffix, value in (("before", 10), ("after", 20)):
+            (directory / f"interrupts_{suffix}.txt").write_text(f" CPU0 CPU3\n 13: {value} {value} GIC timer\n")
+        for suffix, sched in zip(("before", "after"), softirq_sched):
+            (directory / f"softirqs_{suffix}.txt").write_text(
+                f"   CPU0 CPU3\n HI: 0 0\n SCHED: {sched} 7\n HRTIMER: 5 5\n")
+        return directory
+
+    def test_overflow_is_a_warning_not_a_failure(self):
+        result = process_pass(self.pass_directory("pass_core", extra_cycles=1), 0, 90)
+        self.assertEqual(result["issues"], [])
+        self.assertTrue(any("Histogram overflow" in w for w in result["warnings"]))
+
+    def test_sched_softirq_burst_is_flagged_only_on_isolated_victim(self):
+        quiet = process_pass(self.pass_directory("pass_core", (100, 110), "jetson-campaign-0"), 0, 90)
+        self.assertEqual(quiet["softirqs"]["victim"]["SCHED"], 10)
+        self.assertFalse(any("SCHED softirq" in w for w in quiet["warnings"]))
+        burst = process_pass(self.pass_directory("pass_cache_l1", (100, 6100), "jetson-campaign-0"), 0, 90)
+        self.assertTrue(any("SCHED softirq burst on isolated CPU0: 6000 (200/s)" in w for w in burst["warnings"]))
+        self.assertEqual(burst["issues"], [])
+        shared = process_pass(self.pass_directory("pass_cache_l2_l3", (100, 6100)), 0, 90)
+        self.assertFalse(any("SCHED softirq" in w for w in shared["warnings"]))
+        self.assertTrue((self.out / "pass_core/softirqs_delta.csv").exists())
+
+    def test_victim_pass_latency_is_marked_perturbed(self):
+        self.assertEqual(process_pass(self.pass_directory("pass_core"), 0, 90)["latency_role"], "reference")
+        self.assertEqual(process_pass(self.pass_directory("pass_victim_core"), 0, 90)["latency_role"],
+                         "perturbed_by_task_counters")
 
     def test_perf_exact_event_and_large_integer(self):
         path = self.out / "perf.csv"

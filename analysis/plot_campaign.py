@@ -22,7 +22,7 @@ from jetson_tests.transport import verify_download
 
 SCENARIOS = ['baseline', 'interfgen', 'demo']
 COLORS = {0: '#2463A8', 3: '#E47B35'}
-SCOPE = {'victim_cpu': 'CPU vittima', 'victim_task': 'Task cyclictest', 'interferer': 'Interferenti'}
+SCOPE = {'victim_cpu': 'CPU vittima', 'victim_task': 'Task cyclictest', 'interferer': 'CPU interferenti'}
 plt.rcParams.update({'font.family': 'DejaVu Sans', 'font.size': 11, 'axes.titlesize': 14,
                      'axes.labelsize': 10, 'axes.spines.top': False, 'axes.spines.right': False,
                      'axes.edgecolor': '#ADB7C3', 'text.color': '#18283C',
@@ -293,10 +293,10 @@ def build_pages(campaign, entries, target, pdf, duration_s):
     add('memoria_bus','Accessi alla memoria e al bus',memory,
         count_note+'\nBUS_ACCESS conta beat tra core e SCU: non byte DRAM. MEM_ACCESS non equivale a traffico DRAM.')
     add('interferenti','Traffico dei processi interferenti',[
-        ('Interferenti - accessi memoria','conteggi',perf('interferer','memory','memory_accesses')),
-        ('Interferenti - accessi bus','conteggi',perf('interferer','memory','bus_accesses')),
-        ('Interferenti - istruzioni','conteggi',perf('interferer','core','instructions')),
-        ('Interferenti - stall memoria','% dei cicli',ratio('interferer','core','memory_stall','cycles'))],
+        ('CPU interferenti - accessi memoria','conteggi',perf('interferer','memory','memory_accesses')),
+        ('CPU interferenti - accessi bus','conteggi',perf('interferer','memory','bus_accesses')),
+        ('CPU interferenti - istruzioni','conteggi',perf('interferer','core','instructions')),
+        ('CPU interferenti - stall memoria','% dei cicli',ratio('interferer','core','memory_stall','cycles'))],
         'BASELINE non ha processi interferenti: N/D, non zero. Aggregazione dei processi agganciati da perf.\nLo scope comprende i processi monitorati dal protocollo della campagna.')
     caches=[('l1d','L1 dati'),('l1i','L1 istruzioni + L0'),('l2','L2 unified'),('l3','L3 attribuibile al core')]
     for scope, prefix in [('victim_cpu',''),('victim_task','task_')]:

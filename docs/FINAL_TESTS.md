@@ -39,7 +39,7 @@ processo ausiliario della raccolta esegua su CPU4-CPU5.
 | Warm-up di tutti gli scenari | 5 s a ogni passata, massimo richiesto 10 s |
 | Pausa dopo ogni passata | 0 s |
 | Cyclictest | 1 worker, FIFO 90, periodo 1 ms, memoria bloccata |
-| Istogramma | 10.000 microsecondi, overflow conservati |
+| Istogramma | `-N`: bucket da 1 ns fino a 1.000 µs (JSON), overflow conservati |
 | Copertura minima dei contatori | 90% |
 
 Il runner imposta già un worker cyclictest e il memory locking; riavvia e termina

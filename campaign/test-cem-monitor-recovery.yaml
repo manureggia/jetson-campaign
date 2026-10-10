@@ -31,7 +31,8 @@ cyclictest:
   command: cyclictest
   priority: 90
   interval_us: 1000
-  histogram_us: 10000
+  # Range in µs; con -N i bucket sono da 1 ns (1000 µs = 1M bucket, 8 MB). Massimo storico: 288 µs.
+  histogram_us: 1000
 
 scenarios:
   demo:

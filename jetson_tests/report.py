@@ -88,14 +88,18 @@ def generate(campaign):
         catalog["task_clock"] = {"event": "task-clock", "available": True}
         configured = config.get("perf_passes")
         passes = list(configured) if configured is not None else PASSES
-        latency_pass = "pass_core" if "core" in passes else "pass_" + passes[0]
+        # Latency always comes from a CPU-wide pass: victim_* passes slow cyclictest down.
+        reference = [p for p in passes if not p.startswith(("victim_", "task_"))]
+        latency_pass = "pass_core" if "core" in passes else "pass_" + (reference or passes)[0]
         for pass_name in passes:
             scopes = ["victim_task"] if pass_name.startswith(("victim_", "task_")) else ["victim_cpu", "interferer"]
             for scope in scopes:
                 for logical in pass_events(pass_name, catalog, configured=configured):
                     row[f"{scope}__pass_{pass_name}__{logical}"] = None
-        for key in ("min_us", "max_us", "mean_us", "std_us", "samples", "sum_us", "sum_sq_us", "interrupts_total", "interrupts_victim"):
+        for key in ("min_us", "max_us", "mean_us", "std_us", "samples", "sum_us", "sum_sq_us", "interrupts_total", "interrupts_victim",
+                    "victim_sched_softirq", "victim_pass_latency_overhead_us"):
             row[key] = None
+        perturbed = []
         for measured in data["passes"]:
             pass_name = measured["pass"]
             for message in measured.get("warnings", []):
@@ -105,12 +109,15 @@ def generate(campaign):
                 row.update(measured["latency"] or {})
                 irq = measured["interrupts"]
                 row.update(interrupts_total=irq["total"], interrupts_victim=irq["victim"])
+                row["victim_sched_softirq"] = measured.get("softirqs", {}).get("victim", {}).get("SCHED")
                 for column in ("min_us", "max_us", "mean_us", "std_us", "samples", "interrupts_total", "interrupts_victim"):
                     raw_name = "interrupts_delta.csv" if column.startswith("interrupts_") else "cyclictest.json"
                     provenance.append({"attempt": attempt["relative"], "column": column, "pass": pass_name,
                         "scope": "victim_cpu" if column.startswith("interrupts_") else "victim_task", "event": "",
                         "raw": str((out / pass_name / raw_name).relative_to(campaign)),
                         "metrics": str((out / pass_name / "metrics.json").relative_to(campaign))})
+            if measured.get("latency_role") == "perturbed_by_task_counters" and measured.get("latency"):
+                perturbed.append(measured["latency"]["mean_us"])
             for scope, metrics in measured.get("perf", {}).items():
                 for logical, record in metrics.items():
                     key = f"{scope}__{pass_name}__{logical}"
@@ -119,6 +126,8 @@ def generate(campaign):
                         "pass": pass_name, "scope": scope, "event": record["event"],
                         "raw": str((out / pass_name / record["raw"]).relative_to(campaign)),
                         "metrics": str((out / pass_name / "metrics.json").relative_to(campaign))})
+        if perturbed and row["mean_us"] is not None:
+            row["victim_pass_latency_overhead_us"] = statistics.mean(perturbed) - row["mean_us"]
         if row["status"] == "PASS" and not data["passes"]:
             row.update(status="INCOMPLETE", report_issue="Missing measurements despite PASS marker")
         rows.append(row)
@@ -138,7 +147,10 @@ def generate(campaign):
     text = ["# Risultati campagna", "", f"Configurazione: `{ledger['config_hash']}`", "",
             "Le colonne PMU includono scope e passata: provengono da finestre separate.",
             "Profiling e tentativi invalidi sono esclusi dagli aggregati. Valori vuoti indicano dati non disponibili.",
-            "La deviazione standard interna/pooled è della popolazione; quella fra run è campionaria (N/A con n=1).", "",
+            "La deviazione standard interna/pooled è della popolazione; quella fra run è campionaria (N/A con n=1).",
+            "La latenza viene solo da una passata CPU-wide: i contatori per-task/cgroup delle passate victim_* "
+            "rallentano cyclictest (colonna victim_pass_latency_overhead_us) e includono il costo di perf stesso.",
+            "victim_sched_softirq > 0 su una vittima isolata indica lavoro di idle load balance nei contatori PMU.", "",
             "| Core | Scenario | Tipo | Run | Stato | Risultati |", "|---|---|---|---|---|---|"]
     for row in rows:
         text.append(f"| {row['core']} | {row['scenario']} | {row['kind']} | {row['run']} | {row['status']} | [raw](../results/{row['attempt']}/) |")

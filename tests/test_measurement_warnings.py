@@ -43,6 +43,8 @@ class MeasurementWarningTests(unittest.TestCase):
         shutil.copy2(FIXTURES / "perf_victim_cpu.csv", self.measurement / "perf_victim_cpu.csv")
         (self.measurement / "interrupts_before.txt").write_text(BEFORE)
         (self.measurement / "interrupts_after.txt").write_text(AFTER)
+        for suffix in ("before", "after"):  # The worker always snapshots both files.
+            (self.measurement / f"softirqs_{suffix}.txt").write_text("   CPU0 CPU3\n SCHED: 4 0\n")
 
     def measured(self, renamed=False):
         if renamed:

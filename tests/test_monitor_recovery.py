@@ -98,11 +98,14 @@ class MonitorRecoveryTests(unittest.TestCase):
         with patch("jetson_tests.worker.snapshot"), \
              patch("jetson_tests.worker.time.sleep") as sleep, self.assertRaises(RunFailure) as failure:
             acquire_once(c, {"core": 0, "duration_s": 180}, "core", catalog, manager,
-                         self.state(), self.out, [Mock()])
+                         self.state(), self.out, [{"cpus": [2, 1]}, {"cpus": [1]}])
         self.assertEqual(failure.exception.category, "perf_attach")
         manager.wait.assert_not_called()
         sleep.assert_not_called()
-        self.assertEqual(read_json(self.out / "interferer_attachment.json")["pids"], [123])
+        self.assertEqual(read_json(self.out / "interferer_attachment.json")["cpus"], [1, 2])
+        interferer_argv = manager.spawn.call_args_list[1].args[1]
+        self.assertEqual(interferer_argv[4:7], ["-a", "-C", "1,2"])
+        self.assertNotIn("-p", interferer_argv)
 
     def test_pid_attachment_excludes_zombies(self):
         self.manager.jobs = []

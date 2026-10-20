@@ -46,6 +46,22 @@ def ranked_quantile(histogram, samples, p):
     return None
 
 
+QUANTILES = [("p50_us", .5), ("p90_us", .9), ("p99_us", .99), ("p99_9_us", .999)]
+
+
+def job_times(job, name):
+    """exec (wake-up to end of job) or response (release to end of job) of cyclictest-job, in µs.
+    Quantiles are bucket lower edges (hist_ns resolution); mean, min and max are exact."""
+    part, width = job[name], job["hist_ns"]
+    histogram = {int(bucket) * width / 1000: count for bucket, count in part["histogram"].items()}
+    result = {f"{name}_mean_us": part["avg"] / 1000, f"{name}_min_us": part["min"] / 1000,
+              f"{name}_max_us": part["max"] / 1000, f"{name}_overflow_samples": part["overflow"]}
+    for label, p in QUANTILES:
+        result[f"{name}_{label}"] = (percentile(histogram, p) if not part["overflow"]
+                                     else ranked_quantile(histogram, job["cycles"], p))
+    return result
+
+
 def cyclictest(path, victim):
     path = Path(path)
     data = json.loads(path.read_text())
@@ -74,10 +90,15 @@ def cyclictest(path, victim):
               "std_us": moments["std_us"] if complete else None,
               "sum_us": moments["sum_us"] if complete else None,
               "sum_sq_us": moments["sum_sq_us"] if complete else None}
-    for label, p in [("p50_us", .5), ("p90_us", .9), ("p99_us", .99), ("p99_9_us", .999)]:
+    for label, p in QUANTILES:
         result[label] = percentile(histogram, p) if complete else ranked_quantile(histogram, n, p)
     if any(result[k] is None for k in ("min_us", "max_us", "mean_us")):
         raise ValueError("Missing cyclictest summary")
+    job = thread.get("job")
+    if job:
+        result.update(job_read=job["read"], job_write=job["write"], job_pattern=job["pattern"],
+                      job_cycles=job["cycles"], job_missed=job["missed"],
+                      **job_times(job, "exec"), **job_times(job, "response"))
     return result
 
 
@@ -184,6 +205,9 @@ def process_pass(directory, victim, minimum_pct):
             result["warnings"].append(
                 f"Histogram overflow: {result['latency']['overflow_samples']} samples above the range; "
                 "max and in-range quantiles kept, std/pooled moments unavailable")
+        if result["latency"].get("job_missed"):
+            result["warnings"].append(
+                f"Job overran its period: {result['latency']['job_missed']} releases skipped")
     except (ValueError, OSError) as exc:
         result["issues"].append(str(exc))
     result["interrupts"] = interrupts(directory / "interrupts_before.txt", directory / "interrupts_after.txt",

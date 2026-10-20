@@ -10,8 +10,12 @@ import time
 from .common import read_json
 
 
+def job_label(item):
+    return f" job {item['job']}" if item.get('job') else ''
+
+
 def _item_key(item):
-    return tuple(item.get(key) for key in ('core', 'scenario', 'kind', 'run'))
+    return tuple(item.get(key) for key in ('core', 'scenario', 'kind', 'run', 'job'))
 
 
 def _time(value):
@@ -105,7 +109,7 @@ def campaign_progress(directory, ledger, snapshot, now=None, *, plan=None, confi
             else:
                 active_remaining += budget
         current = {'position': next((i for i, row in enumerate(plan, 1) if _item_key(row) == _item_key(item)), 0),
-                   'core': item.get('core'), 'scenario': item.get('scenario'), 'kind': item.get('kind'),
+                   'core': item.get('core'), 'scenario': item.get('scenario'), 'job': item.get('job'), 'kind': item.get('kind'),
                    'run': item.get('run'), 'pass': pass_name, 'pass_position': pass_index + 1,
                    'pass_total': len(passes), 'pass_elapsed_s': elapsed if phase == 'RUNNING' else None,
                    'duration_s': item.get('duration_s', 0)}
@@ -192,14 +196,14 @@ class TerminalProgress:
             number = sum(_item_key(row['item']) == _item_key(attempt['item'])
                          for row in self.ledger['attempts'][:index + 1])
             lines.append(f"Test {current['position']}/{progress['total']} | CPU{current['core']} "
-                         f"{current['scenario']} | {current['kind']} | Ripetizione {current['run']} | Tentativo {number}")
+                         f"{current['scenario']}{job_label(current)} | {current['kind']} | Ripetizione {current['run']} | Tentativo {number}")
             if current['pass']:
                 window = (f" | {clock_text(current['pass_elapsed_s'])}/{clock_text(current['duration_s'])}"
                           if current['pass_elapsed_s'] is not None else '')
                 lines.append(f"Passata {current['pass_position']}/{current['pass_total']}: {current['pass']}{window}")
         elif progress['next']:
             item = progress['next']
-            lines.append(f"Prossimo test: CPU{item['core']} {item['scenario']} | {item['kind']} | Ripetizione {item['run']}")
+            lines.append(f"Prossimo test: CPU{item['core']} {item['scenario']}{job_label(item)} | {item['kind']} | Ripetizione {item['run']}")
         lines.append('Fase: ' + phase)
         source = 'tempi osservati' if progress['observed_eta'] else 'durate nominali'
         if progress['completed'] == progress['total']:

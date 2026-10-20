@@ -15,7 +15,7 @@ def selected_attempts(attempts):
     groups = defaultdict(list)
     for attempt in attempts:
         item = attempt["item"]
-        groups[(item["core"], item["scenario"], item["kind"], item["run"])].append(attempt)
+        groups[(item["core"], item["scenario"], item["kind"], item["run"], item.get("job"))].append(attempt)
     result = []
     for candidates in groups.values():
         generation = max(x.get("generation", 0) for x in candidates)
@@ -30,15 +30,15 @@ def aggregate(rows):
     for row in rows:
         if (row["status"] == "PASS" and row["kind"] == "measurement"
                 and all(row.get(k) is not None for k in ("mean_us", "min_us", "max_us", "samples"))):
-            groups[(row["core"], row["scenario"], row["placement"])].append(row)
+            groups[(row["core"], row["scenario"], row["placement"], row.get("job"))].append(row)
     output = []
-    for (core, scenario, placement), values in sorted(groups.items()):
+    for (core, scenario, placement, job), values in sorted(groups.items()):
         complete = all(v.get("sum_us") is not None and v.get("sum_sq_us") is not None for v in values)
         n = sum(v.get("samples", 0) for v in values)
         total = sum(v["sum_us"] for v in values) if complete else None
         square = sum(v["sum_sq_us"] for v in values) if complete else None
         means = [v["mean_us"] for v in values]
-        output.append({"core": core, "scenario": scenario, "placement": placement, "runs": len(values),
+        output.append({"core": core, "scenario": scenario, "placement": placement, "job": job, "runs": len(values),
                        "samples": n, "pooled_mean_us": total / n if complete and n else None,
                        "pooled_std_us": math.sqrt(max(0, square * n - total * total)) / n if complete and n else None,
                        "run_mean_us": statistics.mean(means),
@@ -63,7 +63,7 @@ def chart(path, rows):
            '<text x="20" y="30" font-family="sans-serif" font-size="20">Latenza massima per gruppo (µs)</text>']
     for index, row in enumerate(rows):
         y = 55 + index * 55
-        label = html.escape(f"CPU{row['core']} / {row['scenario']} / {row['placement']}")
+        label = html.escape(f"CPU{row['core']} / {row['scenario']} / {row['placement']}" + (f" / {row['job']}" if row.get("job") else ""))
         bar = 440 * row["max_us"] / maximum
         svg += [f'<text x="20" y="{y+18}" font-family="sans-serif" font-size="12">{label}</text>',
                 f'<rect x="330" y="{y}" width="{bar}" height="27" fill="#327ca8"/>',
@@ -80,7 +80,7 @@ def generate(campaign):
         item = attempt["item"]
         out = campaign / "results" / attempt["relative"]
         data = read_json(out / "metrics.json", {"passes": []})
-        row = {"core": item["core"], "scenario": item["scenario"], "run": item["run"], "kind": item["kind"],
+        row = {"core": item["core"], "scenario": item["scenario"], "job": item.get("job"), "run": item["run"], "kind": item["kind"],
                "placement": config["scenarios"][item["scenario"]].get("placement", "none"),
                "status": attempt.get("outcome", "INCOMPLETE"), "attempt": attempt["relative"],
                "flamegraph": str((out / "pass_profiling/core.svg").relative_to(campaign)) if (out / "pass_profiling/core.svg").exists() else None}

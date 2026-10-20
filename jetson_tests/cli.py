@@ -95,7 +95,7 @@ def preflight(out, transport, deploy=True, core=None, scenario=None):
 
 
 def _item_key(item):
-    return tuple(item[key] for key in ("core", "scenario", "kind", "run"))
+    return tuple(item.get(key) for key in ("core", "scenario", "kind", "run", "job"))
 
 
 def campaign_matrix(out, c, core=None, scenario=None):

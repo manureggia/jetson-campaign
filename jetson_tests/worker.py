@@ -177,21 +177,27 @@ def start_interferers(c, item, manager, workspace, directory, cpus):
     return jobs
 
 
-def cyclic_command(c, cpu, duration, directory):
+def cyclic_command(c, cpu, duration, directory, job=None):
     ct = c["cyclictest"]
+    spec = c["jobs"][job] if job else {}
     # -N: latencies and histogram buckets in ns; without it cyclictest truncates to whole µs.
     # -h is what fills the JSON histogram. Without --histfile the dense dump (one line per ns,
     # 14 MB for 1 ms) goes to stdout, hence /dev/null: the JSON keeps every non-empty bucket.
-    return [shlex.split(ct["command"])[0], "-a", str(cpu), "-t", "1", "-p", str(ct["priority"]),
-            "--policy=fifo", "-m", "-i", str(ct["interval_us"]), "-D", str(duration), "-N",
+    argv = [shlex.split(ct["command"])[0], "-a", str(cpu), "-t", "1", "-p", str(ct["priority"]),
+            "--policy=fifo", "-m", "-i", str(spec.get("interval_us", ct["interval_us"])), "-D", str(duration), "-N",
             "-h", str(ct["histogram_us"] * 1000), "-q", f"--json={directory / 'cyclictest.json'}",
             "--histfile=/dev/null", *ct["extra_args"]]
+    if spec.get("read") or spec.get("write"):
+        # Patched cyclictest (tools/cyclictest-job): memory job after each latency sample.
+        argv += [f"--job-read={spec['read']}", f"--job-write={spec['write']}",
+                 f"--job-pattern={spec['pattern']}", f"--job-trace={directory / 'job_trace.bin'}"]
+    return argv
 
 
 def workload_command(c, cpu, duration, directory, pass_name, event_args, has_events,
-                     isolated_group=None, perf_cpus=None):
+                     isolated_group=None, perf_cpus=None, job=None):
     perf_cpus = list(perf_cpus or [])
-    argv = cyclic_command(c, cpu, duration, directory)
+    argv = cyclic_command(c, cpu, duration, directory, job)
     child = (["taskset", "-c", str(cpu), *argv] if isolated_group or perf_cpus else argv)
     if isolated_group:
         child = cgroup_exec(isolated_group, child, c["cyclictest"]["priority"])
@@ -348,7 +354,7 @@ def acquire_once(c, item, pass_name, catalog, manager, state, directory, interfe
             monitors.append(manager.spawn("perf_victim_task", argv, cpus=perf_cpus or None,
                                           output_dir=directory))
     argv, manager_cpus, composite = workload_command(
-        c, cpu, duration, directory, pass_name, args, bool(events), isolated_group, perf_cpus)
+        c, cpu, duration, directory, pass_name, args, bool(events), isolated_group, perf_cpus, item.get("job"))
     cyclic = manager.spawn("cyclictest", argv, cpus=manager_cpus, output_dir=directory)
     window["cyclictest_start_monotonic"] = cyclic["record"]["start_monotonic"]
     state.transition("RUNNING")

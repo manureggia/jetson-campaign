@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from jetson_tests.common import RunState, PHASES, choose_attempt, save_json
+from jetson_tests.common import RunState, PHASES, attempt_relative, choose_attempt, save_json
 from jetson_tests.cli import perf_conflict_request
 from jetson_tests.config import load_config, validate, matrix, placement
 from jetson_tests.metrics import cyclictest, perf, interrupts, histogram_summary, number, process_pass
@@ -56,6 +56,38 @@ class CoreTests(unittest.TestCase):
         self.assertIn("-N", argv)
         self.assertEqual(argv[argv.index("-h") + 1], "1000000")
         self.assertIn("--histfile=/dev/null", argv)
+
+    def test_job_dimension(self):
+        jobs = {"none": None, "planner": {"read": 1282304, "write": 2048},
+                "chase": {"read": 4096, "pattern": "chase", "interval_us": 10000}}
+        c = validate({"victim_cores": [3], "repetitions": 2, "profiling": {"enabled": False},
+                      "randomization": {"enabled": True, "seed": 1}, "jobs": jobs})
+        items = matrix(c)
+        self.assertEqual(len(items), 6)
+        self.assertEqual(sorted(i["job"] for i in items if i["run"] == 1), ["chase", "none", "planner"])
+        self.assertEqual(attempt_relative(items[0], 1).count("/job_"), 1)
+        argv = cyclic_command(c, 3, 60, self.out, "chase")
+        self.assertEqual(argv[argv.index("-i") + 1], "10000")
+        self.assertIn("--job-pattern=chase", argv)
+        self.assertIn(f"--job-trace={self.out / 'job_trace.bin'}", argv)
+        # A job without memory traffic runs the unmodified loop.
+        self.assertFalse(any(a.startswith("--job") for a in cyclic_command(c, 3, 60, self.out, "none")))
+        plain = validate({"victim_cores": [3], "profiling": {"enabled": False}})
+        self.assertNotIn("job", matrix(plain)[0])
+        self.assertEqual(attempt_relative(matrix(plain)[0], 1), "core3/baseline/measurement_001/attempt_001")
+        for bad in ({"x": {"read": -1}}, {"x": {"pattern": "chase"}}, {"x": {"size": 1}}, {"X": {}}):
+            with self.assertRaises(ValueError):
+                validate({"victim_cores": [3], "jobs": bad})
+
+    def test_job_fixture(self):
+        # Real cyclictest-job output from the Jetson: 1,28 MB read + 2 kB write per activation.
+        row = cyclictest(ROOT / "tests/fixtures/cyclictest_job.json", 3)
+        self.assertEqual(row["samples"], 5000)
+        self.assertEqual((row["job_cycles"], row["job_missed"], row["job_pattern"]), (5000, 0, "seq"))
+        self.assertAlmostEqual(row["exec_mean_us"], 104.57068)
+        self.assertAlmostEqual(row["exec_max_us"], 111.778)
+        self.assertTrue(row["exec_min_us"] <= row["exec_p50_us"] <= row["exec_p99_9_us"] <= row["exec_max_us"])
+        self.assertGreater(row["response_mean_us"], row["exec_mean_us"])
 
     def test_histogram_overflow(self):
         data = json.loads((ROOT / "tests/fixtures/cyclictest.json").read_text())

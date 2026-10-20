@@ -1,0 +1,352 @@
+--- a/src/cyclictest/cyclictest.c	2026-10-14 14:57:04
++++ b/src/cyclictest/cyclictest.c	2026-10-14 14:57:04
+@@ -497,7 +497,104 @@
+  * - CLOCK_MONOTONIC
+  * - CLOCK_REALTIME
+  *
++ */
++
++/*
++ * cyclictest-job: a synthetic job run after each latency sample, sized on the
++ * memory footprint of a real control task (WATERS 2019 challenge model).
++ * Each activation reads and writes one slot of a ring much larger than the
++ * caches, so its input is cold, as if written by a producer task.
++ * The latency sample is taken before the job and is unchanged.
+  */
++#define JOB_LINE		64
++#define JOB_HIST_RANGE_NS	10000000UL
++
++struct job_hist {
++	unsigned long *buckets;
++	unsigned long num;
++	unsigned long overflow;
++	int64_t min;
++	int64_t max;
++	double sum;
++};
++
++static unsigned long job_read, job_write;
++static unsigned long job_ring_mib = 64;
++static unsigned long job_hist_ns = 100;
++static int job_chase;
++static char job_trace_file[MAX_PATH];
++
++static struct {
++	char *ring;
++	unsigned long ring_size;
++	unsigned long slot_size;	/* 0: job disabled */
++	unsigned long slots;
++	unsigned long slot;
++	unsigned long lines;		/* 64 B lines read per activation */
++	uint64_t start;			/* chase: offset of the first line */
++	struct job_hist exec;
++	struct job_hist resp;
++	unsigned long cycles;
++	unsigned long missed;
++	uint32_t *trace;		/* latency_ns, exec_ns per cycle */
++	unsigned long trace_len;
++	volatile uint64_t sink;
++} job;
++
++static void job_run(void)
++{
++	char *base = job.ring + job.slot * job.slot_size;
++	uint64_t sum = 0, off = job.start, *p, *w;
++	unsigned long i, words;
++
++	if (++job.slot == job.slots)
++		job.slot = 0;
++	if (job_chase) {
++		/* Dependent loads in random order: word 0 holds the next offset */
++		for (i = 0; i < job.lines; i++) {
++			p = (uint64_t *)(base + off);
++			off = p[0];
++			sum += off + p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7];
++		}
++	} else {
++		for (i = 0; i < job.lines; i++) {
++			p = (uint64_t *)(base + i * JOB_LINE);
++			sum += p[0] + p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7];
++		}
++	}
++	w = (uint64_t *)(base + job.lines * JOB_LINE);
++	words = (job.slot_size - job.lines * JOB_LINE) / sizeof(*w);
++	for (i = 0; i < words; i++)
++		w[i] = sum + i;
++	job.sink = sum;
++}
++
++static void job_hist_sample(struct job_hist *h, int64_t ns)
++{
++	unsigned long bucket = ns > 0 ? ns / job_hist_ns : 0;
++
++	if (bucket < h->num)
++		h->buckets[bucket]++;
++	else
++		h->overflow++;
++	if (ns < h->min)
++		h->min = ns;
++	if (ns > h->max)
++		h->max = ns;
++	h->sum += ns;
++}
++
++static void job_record(int64_t latency, int64_t exec, int64_t resp)
++{
++	job_hist_sample(&job.exec, exec);
++	job_hist_sample(&job.resp, resp);
++	if (job.trace && 2 * job.cycles + 1 < job.trace_len) {
++		job.trace[2 * job.cycles] = latency > UINT32_MAX ? UINT32_MAX : latency;
++		job.trace[2 * job.cycles + 1] = exec > UINT32_MAX ? UINT32_MAX : exec;
++	}
++	job.cycles++;
++}
++
+ static void *timerthread(void *param)
+ {
+ 	struct thread_param *par = param;
+@@ -747,6 +844,16 @@
+ 			}
+ 		}
+ 
++		if (job.slot_size) {
++			struct timespec end;
++
++			job_run();
++			clock_gettime(par->clock, &end);
++			job_record(diff, calcdiff_ns(end, now), calcdiff_ns(end, next));
++			/* Releases the job overran are skipped and counted below */
++			now = end;
++		}
++
+ 		stat->cycles++;
+ 
+ 		next.tv_sec += interval.tv_sec;
+@@ -759,6 +866,8 @@
+ 		tsnorm(&next);
+ 
+ 		while (tsgreater(&now, &next)) {
++			if (job.slot_size)
++				job.missed++;
+ 			next.tv_sec += interval.tv_sec;
+ 			next.tv_nsec += interval.tv_nsec;
+ 			tsnorm(&next);
+@@ -875,6 +984,12 @@
+ 	       "                           format: n:c:v n=tasknum c=count v=value in us\n"
+ 	       "	 --dbg_cyclictest  print info useful for debugging cyclictest\n"
+ 	       "-x	 --posix_timers    use POSIX timers instead of clock_nanosleep.\n"
++	       "         --job-read=BYTES  after each sample read BYTES of cold data (requires -N, -t 1)\n"
++	       "         --job-write=BYTES after each sample write BYTES of cold data\n"
++	       "         --job-pattern=seq|chase  read linearly or as a random pointer chase\n"
++	       "         --job-ring=MIB    size of the ring of job slots (default 64)\n"
++	       "         --job-hist-ns=W   bucket width of the job histograms (default 100)\n"
++	       "         --job-trace=FILE  write latency_ns, exec_ns (uint32) per cycle at exit\n"
+ 		);
+ 	if (error)
+ 		exit(EXIT_FAILURE);
+@@ -955,6 +1070,8 @@
+ 	OPT_DBGCYCLIC, OPT_POLICY, OPT_HELP, OPT_NUMOPTS,
+ 	OPT_ALIGNED, OPT_SECALIGNED, OPT_LAPTOP, OPT_SMI,
+ 	OPT_TRACEMARK, OPT_POSIX_TIMERS,
++	OPT_JOB_READ, OPT_JOB_WRITE, OPT_JOB_PATTERN, OPT_JOB_RING,
++	OPT_JOB_HIST_NS, OPT_JOB_TRACE,
+ };
+ 
+ /* Process commandline options */
+@@ -1009,6 +1126,12 @@
+ 			{"policy",           required_argument, NULL, OPT_POLICY },
+ 			{"help",             no_argument,       NULL, OPT_HELP },
+ 			{"posix_timers",     no_argument,	NULL, OPT_POSIX_TIMERS },
++			{"job-read",         required_argument, NULL, OPT_JOB_READ },
++			{"job-write",        required_argument, NULL, OPT_JOB_WRITE },
++			{"job-pattern",      required_argument, NULL, OPT_JOB_PATTERN },
++			{"job-ring",         required_argument, NULL, OPT_JOB_RING },
++			{"job-hist-ns",      required_argument, NULL, OPT_JOB_HIST_NS },
++			{"job-trace",        required_argument, NULL, OPT_JOB_TRACE },
+ 			{NULL, 0, NULL, 0 },
+ 		};
+ 		int c = getopt_long(argc, argv, "a::A::b:c:d:D:h:H:i:l:MNo:p:mqrRsSt::uvD:x",
+@@ -1175,6 +1298,25 @@
+ 		case 'x':
+ 		case OPT_POSIX_TIMERS:
+ 			use_nanosleep = MODE_CYCLIC; break;
++		case OPT_JOB_READ:
++			job_read = strtoul(optarg, NULL, 0); break;
++		case OPT_JOB_WRITE:
++			job_write = strtoul(optarg, NULL, 0); break;
++		case OPT_JOB_PATTERN:
++			if (strcmp(optarg, "seq") && strcmp(optarg, "chase"))
++				fatal("--job-pattern must be seq or chase\n");
++			job_chase = !strcmp(optarg, "chase");
++			break;
++		case OPT_JOB_RING:
++			job_ring_mib = strtoul(optarg, NULL, 0); break;
++		case OPT_JOB_HIST_NS:
++			job_hist_ns = strtoul(optarg, NULL, 0);
++			if (!job_hist_ns)
++				fatal("--job-hist-ns must be positive\n");
++			break;
++		case OPT_JOB_TRACE:
++			strncpy(job_trace_file, optarg, sizeof(job_trace_file) - 1);
++			break;
+ 		case '?':
+ 		case OPT_HELP:
+ 			display_help(0); break;
+@@ -1746,7 +1888,127 @@
+ 	rstat_fd = -1;
+ 	return;
+ }
++
++/* Locked and prefaulted, so the measurement loop never page-faults */
++static void *job_alloc(unsigned long size)
++{
++	void *p = mmap(NULL, size, PROT_READ | PROT_WRITE,
++		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+ 
++	if (p == MAP_FAILED)
++		fatal("cyclictest-job: cannot map %lu bytes\n", size);
++	if (mlock(p, size))
++		fatal("cyclictest-job: cannot lock %lu bytes\n", size);
++	memset(p, 0, size);
++	return p;
++}
++
++static void job_init(void)
++{
++	unsigned long rbytes = (job_read + JOB_LINE - 1) / JOB_LINE * JOB_LINE;
++	unsigned long wbytes = (job_write + JOB_LINE - 1) / JOB_LINE * JOB_LINE;
++	unsigned long i, j, s, tmp, *order;
++	uint64_t seed = 424242;
++	struct job_hist *h[] = { &job.exec, &job.resp };
++
++	if (!use_nsecs || num_threads != 1)
++		fatal("cyclictest-job: --job-read/--job-write require -N and -t 1\n");
++	if (job_chase && !rbytes)
++		fatal("cyclictest-job: --job-pattern=chase requires --job-read\n");
++	job.lines = rbytes / JOB_LINE;
++	job.slot_size = rbytes + wbytes;
++	job.slots = job_ring_mib * 1048576UL / job.slot_size;
++	if (job.slots < 2)
++		fatal("cyclictest-job: --job-ring holds fewer than two slots\n");
++	job.ring_size = job.slots * job.slot_size;
++	job.ring = job_alloc(job.ring_size);
++	memset(job.ring, 0x5a, job.ring_size);
++
++	if (job_chase) {
++		/* One random cycle through all read lines (Fisher-Yates, fixed seed) */
++		order = malloc(job.lines * sizeof(*order));
++		if (!order)
++			fatal("cyclictest-job: allocation failed\n");
++		for (i = 0; i < job.lines; i++)
++			order[i] = i;
++		for (i = job.lines - 1; i > 0; i--) {
++			seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
++			j = (seed >> 33) % (i + 1);
++			tmp = order[i];
++			order[i] = order[j];
++			order[j] = tmp;
++		}
++		for (s = 0; s < job.slots; s++)
++			for (i = 0; i < job.lines; i++)
++				*(uint64_t *)(job.ring + s * job.slot_size + order[i] * JOB_LINE) =
++					order[(i + 1) % job.lines] * JOB_LINE;
++		job.start = order[0] * JOB_LINE;
++		free(order);
++	}
++
++	for (i = 0; i < 2; i++) {
++		h[i]->num = JOB_HIST_RANGE_NS / job_hist_ns;
++		h[i]->buckets = job_alloc(h[i]->num * sizeof(*h[i]->buckets));
++		h[i]->min = INT64_MAX;
++	}
++	if (job_trace_file[0]) {
++		if (!duration)
++			fatal("cyclictest-job: --job-trace requires -D\n");
++		job.trace_len = 2 * ((unsigned long)duration * 1000000UL / interval + 1024);
++		job.trace = job_alloc(job.trace_len * sizeof(*job.trace));
++	}
++}
++
++static void job_write_hist(FILE *f, const char *name, struct job_hist *h, int last)
++{
++	unsigned long i;
++	int comma = 0;
++
++	fprintf(f, "        \"%s\": {\n          \"histogram\": {", name);
++	for (i = 0; i < h->num; i++) {
++		if (!h->buckets[i])
++			continue;
++		fprintf(f, "%s\n            \"%lu\": %lu", comma ? "," : "", i, h->buckets[i]);
++		comma = 1;
++	}
++	fprintf(f, "%s},\n", comma ? "\n          " : "");
++	fprintf(f, "          \"overflow\": %lu,\n", h->overflow);
++	fprintf(f, "          \"min\": %lld,\n", job.cycles ? (long long)h->min : 0LL);
++	fprintf(f, "          \"max\": %lld,\n", (long long)h->max);
++	fprintf(f, "          \"avg\": %.2f\n", job.cycles ? h->sum / job.cycles : 0.0);
++	fprintf(f, "        }%s\n", last ? "" : ",");
++}
++
++static void job_write_json(FILE *f)
++{
++	fprintf(f, "      \"job\": {\n");
++	fprintf(f, "        \"read\": %lu,\n", job_read);
++	fprintf(f, "        \"write\": %lu,\n", job_write);
++	fprintf(f, "        \"pattern\": \"%s\",\n", job_chase ? "chase" : "seq");
++	fprintf(f, "        \"ring_bytes\": %lu,\n", job.ring_size);
++	fprintf(f, "        \"slots\": %lu,\n", job.slots);
++	fprintf(f, "        \"hist_ns\": %lu,\n", job_hist_ns);
++	fprintf(f, "        \"cycles\": %lu,\n", job.cycles);
++	fprintf(f, "        \"missed\": %lu,\n", job.missed);
++	job_write_hist(f, "exec", &job.exec, 0);
++	job_write_hist(f, "response", &job.resp, 1);
++	fprintf(f, "      }\n");
++}
++
++static void job_write_trace(void)
++{
++	unsigned long n = job.cycles < job.trace_len / 2 ? job.cycles : job.trace_len / 2;
++	FILE *f;
++
++	if (!job.trace)
++		return;
++	f = fopen(job_trace_file, "wb");
++	if (!f || fwrite(job.trace, 2 * sizeof(*job.trace), n, f) != n)
++		warn("cyclictest-job: cannot write %s\n", job_trace_file);
++	if (f)
++		fclose(f);
++}
++
+ static void write_stats(FILE *f, void *data)
+ {
+ 	struct thread_param **par = parameters;
+@@ -1776,7 +2038,9 @@
+ 		fprintf(f, "      \"max\": %ld,\n", s->max);
+ 		fprintf(f, "      \"avg\": %.2f,\n", s->avg/s->cycles);
+ 		fprintf(f, "      \"cpu\": %d,\n", par[i]->cpu);
+-		fprintf(f, "      \"node\": %d\n", par[i]->node);
++		fprintf(f, "      \"node\": %d%s\n", par[i]->node, job.slot_size ? "," : "");
++		if (job.slot_size)
++			job_write_json(f);
+ 		fprintf(f, "    }%s\n", i == num_threads - 1 ? "" : ",");
+ 	}
+ 	fprintf(f, "  }\n");
+@@ -1841,6 +2105,9 @@
+ 			goto out;
+ 		}
+ 
++	if (job_read || job_write)
++		job_init();
++
+ 	/* use the /dev/cpu_dma_latency trick if it's there */
+ 	set_latency_target();
+ 
+@@ -2172,6 +2439,8 @@
+ 			threadfree(statistics[i]->values, VALBUF_SIZE*sizeof(long), parameters[i]->node);
+ 	}
+ 
++	job_write_trace();
++
+ 	if (trigger)
+ 		trigger_print();
+ 

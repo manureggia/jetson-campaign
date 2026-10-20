@@ -81,7 +81,8 @@ class RunState:
 
 
 def attempt_relative(item, attempt):
-    return f"core{item['core']}/{item['scenario']}/{item['kind']}_{item['run']:03d}/attempt_{attempt:03d}"
+    job = f"/job_{item['job']}" if item.get("job") else ""
+    return f"core{item['core']}/{item['scenario']}{job}/{item['kind']}_{item['run']:03d}/attempt_{attempt:03d}"
 
 
 def choose_attempt(attempts, rerun_failed=False, force=False):

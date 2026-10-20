@@ -35,7 +35,7 @@ def command(value, name):
 
 def validate(config):
     c = copy.deepcopy(config)
-    keys(c, "name victim_cores isolcpu perf_cpus perf_passes randomization command-pre-test command-post-test repetitions duration_s cooldown_s poll_s timeout_grace_s shutdown_timeout_s min_free_gb results_dir perf_min_running_pct cyclictest scenarios profiling recovery llm", "campaign")
+    keys(c, "name victim_cores isolcpu perf_cpus perf_passes randomization command-pre-test command-post-test repetitions duration_s cooldown_s poll_s timeout_grace_s shutdown_timeout_s min_free_gb results_dir perf_min_running_pct cyclictest jobs scenarios profiling recovery llm", "campaign")
     c.setdefault("name", "jetson-campaign")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", c["name"]):
         raise ValueError("name must contain only letters, numbers, _ and -")
@@ -123,6 +123,24 @@ def validate(config):
     allowed_extra = {"--verbose", "-v", "--unbuffered", "-u"}
     if not isinstance(ct["extra_args"], list) or any(x not in allowed_extra for x in ct["extra_args"]):
         raise ValueError("extra_args permits only --verbose/-v and --unbuffered/-u; protocol flags are managed")
+    if "jobs" in c:
+        # Synthetic memory job of the patched cyclictest (tools/cyclictest-job), one matrix dimension.
+        jobs = c["jobs"]
+        if not isinstance(jobs, dict) or not jobs:
+            raise ValueError("jobs must be a nonempty mapping of job names to settings")
+        for name in list(jobs):
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9_]+", name):
+                raise ValueError(f"Invalid job name: {name}")
+            job = jobs[name] = jobs[name] or {}
+            keys(job, "read write pattern interval_us", f"jobs.{name}")
+            for key in ("read", "write"):
+                job.setdefault(key, 0)
+                positive(job[key], f"jobs.{name}.{key}", zero=True, integer=True)
+            job.setdefault("pattern", "seq")
+            if job["pattern"] not in {"seq", "chase"} or (job["pattern"] == "chase" and not job["read"]):
+                raise ValueError(f"jobs.{name}.pattern must be seq, or chase with read > 0")
+            if "interval_us" in job:
+                positive(job["interval_us"], f"jobs.{name}.interval_us", integer=True)
     scenarios = c.setdefault("scenarios", {"baseline": {"enabled": True}})
     for name, spec in scenarios.items():
         if name not in {"baseline", "interfgen", "demo"} or not isinstance(spec, dict):
@@ -248,13 +266,15 @@ def matrix(c, core=None, scenario=None):
         if not c["scenarios"].get(name, {}).get("enabled", False):
             continue
         for cpu in c["victim_cores"]:
-            for run in range(1, c["repetitions"] + 1):
-                rows.append(dict(core=cpu, scenario=name, run=run, kind="measurement", passes=list(c.get("perf_passes", PASSES)),
-                                 duration_s=c["duration_s"]))
-            if c["profiling"]["enabled"]:
-                for run in range(1, c["profiling"]["repetitions"] + 1):
-                    rows.append(dict(core=cpu, scenario=name, run=run, kind="profiling", passes=["profiling"],
-                                     duration_s=c["profiling"]["duration_s"]))
+            # Without jobs, rows keep their historical shape (no "job" key).
+            for job in ([{"job": job} for job in c["jobs"]] if "jobs" in c else [{}]):
+                for run in range(1, c["repetitions"] + 1):
+                    rows.append(dict(core=cpu, scenario=name, run=run, kind="measurement", passes=list(c.get("perf_passes", PASSES)),
+                                     duration_s=c["duration_s"], **job))
+                if c["profiling"]["enabled"]:
+                    for run in range(1, c["profiling"]["repetitions"] + 1):
+                        rows.append(dict(core=cpu, scenario=name, run=run, kind="profiling", passes=["profiling"],
+                                         duration_s=c["profiling"]["duration_s"], **job))
     settings = c.get("randomization", {})
     if settings.get("enabled"):
         rng = random.Random(settings["seed"])

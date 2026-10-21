@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import fcntl
 from itertools import count
 import json
+import os
 import shlex
 from pathlib import Path
 import subprocess
@@ -402,6 +403,25 @@ def run_campaign(out, c, args, transport=None):
     return out
 
 
+def start_bot(campaigns, destination=None):
+    """Telegram bot (telegram_control.py) following this controller. It runs in its own session,
+    so it survives Ctrl-C and can report the interruption; pairing happens first, only if needed."""
+    script = REPOSITORY / "telegram_control.py"
+    if subprocess.run([sys.executable, str(script), "--pair-only"], cwd=REPOSITORY).returncode:
+        raise RuntimeError("Telegram bot unavailable; campaign not started")
+    argv = [sys.executable, str(script), "--watch-pid", str(os.getpid()), "--since", str(time.time())]
+    for path, c, sources in campaigns:
+        if sources is None:
+            argv += ["--campaign", str(path)]
+        else:
+            parent = Path(destination).parent if destination else REPOSITORY / c["results_dir"]
+            argv += ["--results-dir", str(parent)]
+    with (REPOSITORY / ".telegram-bot.log").open("ab") as log:
+        subprocess.Popen(argv, cwd=REPOSITORY, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                         start_new_session=True)
+    print(f"Telegram bot started; log: {REPOSITORY / '.telegram-bot.log'}", flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Reliable Jetson campaigns; commands are configured in YAML")
     parser.add_argument("command", choices=["doctor", "plan", "run", "resume", "report"])
@@ -413,6 +433,8 @@ def main(argv=None):
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--rerun-failed", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--bot", action="store_true",
+                        help="Start the Telegram bot: start, finish and interruption notices (token in .env)")
     args = parser.parse_args(argv)
     try:
         if args.command == "report":
@@ -452,6 +474,8 @@ def main(argv=None):
                               "acquisition_hours": seconds / 3600}
                 print(json.dumps(output, indent=2))
                 return 0
+        if args.bot and args.command != "doctor":
+            start_bot(campaigns, args.campaign)
         for path, c, sources in campaigns:
             out = path if sources is None else create_campaign(c, sources, args.campaign, reserve_remote_dir)
             print(f"Local campaign: {out}", flush=True)

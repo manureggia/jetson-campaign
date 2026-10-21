@@ -9,6 +9,7 @@ old_results/
 .DS_Store
 .telegram-state.json
 .telegram-state.lock
+.telegram-bot.log
 .env
 .env.*
 

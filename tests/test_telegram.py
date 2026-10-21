@@ -171,6 +171,76 @@ class TelegramTests(unittest.TestCase):
             self.assertTrue((self.control.directory / 'llm/42.json').exists())
             resume.assert_not_called()
 
+    def test_token_from_env_file(self):
+        env = self.out / '.env'
+        env.write_text('# bot\nexport TELEGRAM_BOT_TOKEN="123:abc"\n')
+        with patch.object(tg, '__file__', str(self.out / 'telegram_control.py')), \
+             patch.dict(tg.os.environ, {}, clear=True):
+            self.assertEqual(tg.load_token(), '123:abc')
+            with patch.dict(tg.os.environ, {'TELEGRAM_BOT_TOKEN': 'env'}):
+                self.assertEqual(tg.load_token(), 'env')
+            env.write_text('OTHER=1\n')
+            self.assertIsNone(tg.load_token())
+
+    def test_watch_reports_start_finish_and_interruption(self):
+        results = self.out / 'results'
+        item = {'core': 0, 'scenario': 'demo', 'kind': 'measurement', 'run': 1, 'passes': ['core'], 'duration_s': 60}
+        old, new = results / 'old', results / 'new'
+        save_json(old / 'campaign.json', {'id': 'old', 'created': '2026-01-01T00:00:00+00:00', 'attempts': []})
+        save_json(new / 'campaign.json', {'id': 'new', 'created': '2026-02-01T00:00:00+00:00', 'attempts': []})
+        save_json(new / 'plan.json', {'experiments': [item]})
+        watch = tg.Watch(1234, results_dirs=[results],
+                         since=datetime(2026, 1, 15, tzinfo=timezone.utc).timestamp())
+        sent = []
+        with patch.object(watch, 'alive', return_value=True):
+            self.assertTrue(watch.poll(sent.append))
+            self.assertTrue(watch.poll(sent.append))
+        self.assertEqual(len(sent), 1)
+        self.assertIn('Campagna avviata: new', sent[0])
+        save_json(new / 'campaign.json', {'id': 'new', 'created': '2026-02-01T00:00:00+00:00', 'attempts': [
+            {'item': item, 'relative': 'a1', 'generation': 0, 'outcome': 'PASS', 'retries_left': 2}]})
+        with patch.object(watch, 'alive', return_value=False):
+            self.assertFalse(watch.poll(sent.append))
+        self.assertEqual(len(sent), 2)
+        self.assertIn('Campagna finita: new', sent[1])
+
+        resumed = tg.Watch(1234, campaign=new)
+        save_json(new / 'campaign.json', {'id': 'new', 'attempts': []})
+        sent.clear()
+        with patch.object(resumed, 'alive', return_value=False):
+            self.assertFalse(resumed.poll(sent.append))
+            self.assertFalse(resumed.poll(sent.append))
+        self.assertEqual(len(sent), 2)
+        self.assertIn('Campagna ripresa: new', sent[0])
+        self.assertIn('Campagna interrotta: new', sent[1])
+        self.assertIn('resume --campaign', sent[1])
+
+        early = tg.Watch(1234, results_dirs=[self.out / 'empty'])
+        sent.clear()
+        with patch.object(early, 'alive', return_value=False):
+            early.poll(sent.append)
+            early.poll(sent.append)
+        self.assertEqual(sent, ['⚠️ Controller terminato prima di creare la campagna. Controlla il terminale.'])
+
+    def test_bot_option_pairs_then_watches_controller(self):
+        from jetson_tests import cli
+        config = {'name': 'x', 'results_dir': 'results/thesis'}
+        with patch.object(cli, 'REPOSITORY', self.out), \
+             patch.object(cli.subprocess, 'run', return_value=Mock(returncode=0)) as run, \
+             patch.object(cli.subprocess, 'Popen') as spawn:
+            cli.start_bot([(Path('a.yaml'), config, {}), (self.out / 'results/old', config, None)])
+        self.assertIn('--pair-only', run.call_args.args[0])
+        argv, options = spawn.call_args.args[0], spawn.call_args.kwargs
+        self.assertEqual(argv[argv.index('--watch-pid') + 1], str(cli.os.getpid()))
+        self.assertEqual(argv[argv.index('--results-dir') + 1], str(self.out / 'results/thesis'))
+        self.assertEqual(argv[argv.index('--campaign') + 1], str(self.out / 'results/old'))
+        self.assertTrue(options['start_new_session'])
+        with patch.object(cli, 'REPOSITORY', self.out), \
+             patch.object(cli.subprocess, 'run', return_value=Mock(returncode=1)), \
+             patch.object(cli.subprocess, 'Popen') as spawn, self.assertRaises(RuntimeError):
+            cli.start_bot([(Path('a.yaml'), config, {})])
+        spawn.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

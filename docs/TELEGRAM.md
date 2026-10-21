@@ -28,7 +28,37 @@ gruppi, modifiche ai messaggi e comandi precedenti all'avvio vengono ignorati.
    minuti. L'associazione viene salvata localmente in `.telegram-state.json`, escluso
    da Git. Il token resta solo nell'ambiente del processo e non viene trasferito alla Jetson.
 
-Agli avvii successivi ometti `--pair`. In un nuovo terminale rileggi il token.
+Agli avvii successivi ometti `--pair`: l'abbinamento resta valido finché non cambi bot
+(token di un altro bot) o non cancelli `.telegram-state.json`. In un nuovo terminale rileggi il token,
+oppure salvalo una volta in `.env` (escluso da Git e mai trasferito alla Jetson):
+
+```bash
+printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN" > .env && chmod 600 .env
+```
+
+La variabile d'ambiente, se presente, ha la precedenza sul file.
+
+## Avvio insieme alla campagna (`--bot`)
+
+```bash
+.venv/bin/python -m jetson_tests run --config campaign-thesis-base-h3.yaml --bot
+.venv/bin/python -m jetson_tests resume --campaign results/thesis/NOME --bot
+```
+
+Con `--bot` il controller avvia il bot prima della campagna. Se la chat non è ancora abbinata
+stampa `/pair CODICE` e aspetta l'abbinamento (cinque minuti); se il bot non parte, la campagna
+non viene avviata. Il bot gira in una sessione separata, quindi Ctrl-C o la chiusura del terminale
+fermano il controller ma non il bot, e invia:
+
+- **campagna avviata/ripresa**: numero di test, durata e fine stimate, appena il preflight scrive il piano;
+- **campagna finita**: PASS e FAIL, percorso del report;
+- **campagna interrotta**: test conclusi e comando `resume ... --bot` per riprendere.
+
+Con più `--config` notifica ogni campagna. Quando il controller termina, il bot invia gli ultimi
+avvisi ed esce. Nel frattempo risponde anche ai comandi qui sotto. Il log è in `.telegram-bot.log`.
+Un solo bot per volta: se ne gira già uno lanciato a mano, `--bot` si ferma con un errore.
+Se si spegne tutta la macchina del controller (per esempio WSL chiuso da Windows), si spegne
+anche il bot e non può avvisare.
 Per bloccare eccezionalmente il bot su una campagna specifica resta disponibile
 `--campaign results/NOME_CAMPAGNA`; `--results-dir` cambia invece la directory da scandire.
 Il programma non avvia una campagna automaticamente e non richiede webhook.
@@ -89,7 +119,7 @@ API utilizzate: [getUpdates e sendMessage, documentazione Telegram](https://core
 
 ## Verifiche dell'implementazione
 
-`python -m unittest tests.test_telegram -v`: undici test locali su autorizzazione,
+`python -m unittest tests.test_telegram -v`: quattordici test locali su autorizzazione,
 comandi consentiti, lock del controller, compatibilità del codice, selezione originale,
 protezione del token, identità del worker e fallback LLM. Segnali e riavvii sono simulati.
 La lettura SSH di `/status` è stata verificata sulla DEMO in corso, senza interromperla;

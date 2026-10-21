@@ -1,5 +1,6 @@
 """Small local Telegram companion; no changes to the measurement protocol."""
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import json
 import os
@@ -39,6 +40,19 @@ def latest_campaign(results_dir):
     if not candidates:
         raise ValueError('Nessuna campagna trovata in ' + str(Path(results_dir).resolve()))
     return max(candidates)[-1]
+
+
+def load_token():
+    """TELEGRAM_BOT_TOKEN from the environment, else from .env next to this file (excluded from Git)."""
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    path = Path(__file__).resolve().parent / '.env'
+    if token or not path.is_file():
+        return token
+    for line in path.read_text().splitlines():
+        key, separator, value = line.strip().partition('=')
+        if separator and key.removeprefix('export ').strip() == 'TELEGRAM_BOT_TOKEN':
+            return value.strip().strip('\'"') or None
+    return None
 
 
 def clean(value):
@@ -151,6 +165,98 @@ def format_perf_request(request, reason=None):
                              'con i workload oppure fermare la campagna. La CPU vittima resta separata.'),
               '', 'Senza risposta entro 10 minuti verranno usati i core liberi, se validi per tutta la campagna; altrimenti il test non partirà.']
     return '\n'.join(lines)[:1850]
+
+
+def format_started(out, ledger, progress, resumed):
+    lines = [('▶️ Campagna ripresa: ' if resumed else '▶️ Campagna avviata: ') + str(ledger.get('id', out.name)),
+             f"Test: {progress['total']}" + (f" ({progress['completed']} già conclusi)" if progress['completed'] else '')]
+    if progress['completed'] < progress['total']:
+        finish = _time(progress['finish']).astimezone()
+        lines += [f"Durata stimata: {duration_text(progress['remaining_s'])}",
+                  'Fine stimata: ' + finish.strftime('%d/%m alle %H:%M')]
+    return '\n'.join(lines)
+
+
+def format_finished(out, ledger, progress):
+    head = '✅ Campagna finita: ' if not progress['failed'] else '⚠️ Campagna finita con errori: '
+    return (head + str(ledger.get('id', out.name)) +
+            f"\n{progress['passed']} PASS, {progress['failed']} FAIL su {progress['total']} test." +
+            '\nReport: ' + str(out / 'report/summary.md'))
+
+
+def format_interrupted(out, ledger, progress):
+    lines = ['⚠️ Campagna interrotta: ' + str(ledger.get('id', out.name))]
+    if progress:
+        lines.append(f"Test conclusi: {progress['completed']}/{progress['total']} "
+                     f"({progress['passed']} PASS, {progress['failed']} FAIL)")
+    else:
+        lines.append('Il controller si è fermato prima dell\'inizio dei test (preflight).')
+    lines += ['Il controller si è fermato (Ctrl-C, errore o terminale chiuso); il tentativo sulla Jetson '
+              'termina da solo entro la propria scadenza.', '',
+              'Per riprendere:', 'python -m jetson_tests resume --campaign ' + shlex.quote(str(out)) + ' --bot']
+    return '\n'.join(lines)
+
+
+class Watch:
+    """Start, finish and interruption notices for the campaigns of one controller process (--bot)."""
+
+    def __init__(self, pid, campaign=None, results_dirs=(), since=0.0):
+        self.pid = pid
+        self.campaign = Path(campaign).resolve() if campaign else None
+        self.results_dirs = [Path(d).resolve() for d in results_dirs]
+        self.since = datetime.fromtimestamp(since, timezone.utc)
+        self.started, self.closed = set(), set()
+        self.reported_exit = False
+
+    def campaigns(self):
+        if self.campaign:
+            return [self.campaign]
+        found = []
+        for directory in self.results_dirs:
+            for ledger_path in directory.glob('*/campaign.json'):
+                created = _time(read_json(ledger_path, {}).get('created'))
+                if created and created >= self.since:
+                    found.append((created, ledger_path.parent))
+        return [out for _, out in sorted(found)]
+
+    def alive(self):
+        try:
+            os.kill(self.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            pass
+        return True
+
+    def latest(self):
+        found = self.campaigns()
+        return found[-1] if found else None
+
+    def poll(self, send):
+        """Send the notices due now; False once the controller has exited and everything was reported."""
+        # Liveness first: a campaign completed just before the controller exited is read as finished.
+        alive = self.alive()
+        campaigns = self.campaigns()
+        for out in campaigns:
+            if out in self.closed:
+                continue
+            ledger = read_json(out / 'campaign.json', {})
+            progress = campaign_progress(out, ledger, {})
+            if progress and out not in self.started:
+                send(format_started(out, ledger, progress, resumed=self.campaign is not None))
+                self.started.add(out)
+            if progress and progress['completed'] == progress['total']:
+                send(format_finished(out, ledger, progress))
+                self.closed.add(out)
+            elif not alive:
+                send(format_interrupted(out, ledger, progress))
+                self.closed.add(out)
+        if alive:
+            return True
+        if not campaigns and not self.reported_exit:
+            send('⚠️ Controller terminato prima di creare la campagna. Controlla il terminale.')
+            self.reported_exit = True
+        return False
 
 
 class Telegram:
@@ -352,29 +458,41 @@ def authorized_callback(update, chat):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--campaign', type=Path, help='Override: usa sempre questa campagna')
-    parser.add_argument('--results-dir', type=Path, default=REPOSITORY / 'results',
-                        help='Directory in cui selezionare automaticamente la campagna più recente')
+    parser.add_argument('--results-dir', type=Path, action='append',
+                        help='Directory in cui selezionare automaticamente la campagna più recente (ripetibile con --watch-pid)')
     parser.add_argument('--pair', action='store_true', help='Associate your private chat using a local one-time code')
+    parser.add_argument('--pair-only', action='store_true', help='Abbina la chat solo se non lo è già, poi esci')
+    parser.add_argument('--watch-pid', type=int, help='Controller da seguire (--bot): notifica inizio, fine e interruzione, poi esce')
+    parser.add_argument('--since', type=float, default=0.0, help='Con --watch-pid: segui le campagne create da questo istante (epoch)')
     args = parser.parse_args()
-    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    args.results_dir = args.results_dir or [REPOSITORY / 'results']
+    token = load_token()
     if not token:
-        parser.error('Imposta TELEGRAM_BOT_TOKEN nel terminale; non inserirlo in YAML o Git.')
+        parser.error('Imposta TELEGRAM_BOT_TOKEN nel terminale o nel file .env; non inserirlo in YAML o Git.')
     api = Telegram(token)
     controls = {}
+    watch = Watch(args.watch_pid, args.campaign, args.results_dir, args.since) if args.watch_pid else None
 
     def current_control():
-        campaign = args.campaign.resolve() if args.campaign else latest_campaign(args.results_dir)
+        campaign = (watch and watch.latest()) or (args.campaign.resolve() if args.campaign
+                                                  else latest_campaign(args.results_dir[0]))
         if campaign not in controls:
             controls[campaign] = Control(campaign)
         return controls[campaign]
     state_file = Path(__file__).resolve().parent / '.telegram-state.json'
     with state_file.with_suffix('.lock').open('a+') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit('Un altro bot Telegram è già attivo: fermalo prima di avviarne un altro.') from None
         state = read_json(state_file, {})
         bot_id = api.call('getMe')['id']
         if state.get('bot_id') != bot_id:
             state = {'bot_id': bot_id}
-        code = secrets.token_hex(4) if args.pair else None
+        if args.pair_only and state.get('chat'):
+            print('Bot Telegram già abbinato.', flush=True)
+            return
+        code = secrets.token_hex(4) if args.pair or args.pair_only else None
         if code:
             print('Invia al bot in chat privata: /pair ' + code, flush=True)
         elif not state.get('chat'):
@@ -416,6 +534,9 @@ def main():
                             save_json(state_file, state)
                             code = None
                             api.send(chat, 'Chat abbinata.\n' + HELP)
+                            if args.pair_only:
+                                print('Chat abbinata.', flush=True)
+                                return
                         continue
                     if not authorized(update, state['chat'], since):
                         continue
@@ -432,6 +553,9 @@ def main():
                         code_result = control.child.returncode
                         control.child = None
                         api.send(state['chat'], f'Controller terminato per {control.out.name}, exit code {code_result}. Usa /status e consulta telegram/controller.log.')
+                if watch and not code and not watch.poll(lambda text: api.send(state['chat'], text)):
+                    print('Controller terminato: bot chiuso.', flush=True)
+                    return
                 if not code:
                     try:
                         control = current_control()

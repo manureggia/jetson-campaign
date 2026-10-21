@@ -57,6 +57,16 @@ class MeasurementWarningTests(unittest.TestCase):
             {"item": matrix(self.config)[0], "relative": self.relative, "outcome": "PASS", "download_verified": True}]})
         save_json(self.run / "metrics.json", {"passes": [metrics]})
 
+    def test_latency_only_pass_has_no_perf_issues(self):
+        config = validate({"victim_cores": [0], "perf_passes": {"latency": []}, "profiling": {"enabled": False}})
+        self.assertEqual(matrix(config)[0]["passes"], ["latency"])
+        save_json(self.measurement / "measurement.json", {"scopes": {"victim_cpu": {}}})
+        (self.measurement / "perf_victim_cpu.csv").unlink()
+        measured = self.measured()
+        self.assertEqual(measured["perf"]["victim_cpu"], {})
+        self.assertFalse(any("victim_cpu/" in issue for issue in measured["issues"]))
+        self.assertIsNotNone(measured["latency"])
+
     def test_irq_changes_missing_rows_resets_and_headers_are_warnings(self):
         cases = [AFTER.replace('32 Level', '32 Level dma1chan0'),
                  AFTER.replace('333 0', '1 0'),

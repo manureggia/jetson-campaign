@@ -19,7 +19,8 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 SCENARIOS = [('baseline', 'Baseline', '#cbcbc4'), ('interfgen', 'INTERFGEN', '#3a5c4b'), ('demo', 'tkHPick', '#bb9841')]
 STATS = [('mean_us', 'Media', statistics.mean), ('p99_us', 'P99', statistics.mean),
          ('p99_9_us', 'P99,9', statistics.mean), ('max_us', 'Massimo', max)]
-JOBS = {'none': 'nessun lavoro', 'h3_frame': 'frame H3 Vision, scrittura 1,31 MB', 'h3_track': 'tracking H3 Vision, 60 marker'}
+JOBS = {'none': 'nessun lavoro', 'h3_frame': 'frame H3 Vision, scrittura 1,31 MB', 'h3_track': 'tracking H3 Vision, 60 marker',
+        'h3_frame_track': 'frame + tracking H3 Vision'}
 INK, GRID, AXIS = '#212b26', '#e7e9e4', '#afb5af'
 plt.rcParams.update({'font.family': ['Helvetica', 'DejaVu Sans'], 'font.size': 9, 'axes.spines.top': False,
                      'axes.spines.right': False, 'axes.edgecolor': AXIS, 'text.color': INK, 'axes.labelcolor': INK,
@@ -41,16 +42,18 @@ def main():
             if row['status'] == 'PASS' and row['kind'] == 'measurement':
                 data.setdefault((row['core'], row.get('job') or ''), {}).setdefault(row['scenario'], []).append(row)
     panels = sorted(data)
+    # Only the scenarios the campaign ran, centred on each group.
+    scenarios = [s for s in SCENARIOS if any(s[0] in data[panel] for panel in panels)]
     fig, axes = plt.subplots(1, len(panels), figsize=(5.2 * len(panels), 3.4), sharey=True, squeeze=False)
     width = .26
     for ax, (core, job) in zip(axes[0], panels):
-        for k, (scenario, _, color) in enumerate(SCENARIOS):
+        for k, (scenario, _, color) in enumerate(scenarios):
             runs = data[core, job].get(scenario, [])
             for i, (key, _, reduce) in enumerate(STATS):
                 values = [float(r[key]) for r in runs if r.get(key)]
                 if not values:
                     continue
-                x, value = i + (k - 1) * (width + .02), reduce(values)
+                x, value = i + (k - (len(scenarios) - 1) / 2) * (width + .02), reduce(values)
                 ax.bar(x, value, width, color=color, edgecolor='white', linewidth=.6)
                 ax.text(x, value * 1.08, label(value), ha='center', va='bottom', rotation=90, fontsize=7)
         ax.set_yscale('log')
@@ -65,8 +68,8 @@ def main():
         title = f'Vittima su CPU{core}' + (f' – {JOBS.get(job, job)}' if job else '')
         ax.set_title(title, fontweight='bold', fontsize=11)
     axes[0][0].set_ylabel('Latenza [µs]')
-    fig.legend([plt.Rectangle((0, 0), 1, 1, color=c) for _, _, c in SCENARIOS], [n for _, n, _ in SCENARIOS],
-               loc='upper center', ncol=3, bbox_to_anchor=(.5, 1.02), handlelength=1.2, columnspacing=2)
+    fig.legend([plt.Rectangle((0, 0), 1, 1, color=c) for _, _, c in scenarios], [n for _, n, _ in scenarios],
+               loc='upper center', ncol=len(scenarios), bbox_to_anchor=(.5, 1.02), handlelength=1.2, columnspacing=2)
     fig.tight_layout(rect=(0, 0, 1, .9))
     target = campaign / 'report/figure_tesi'
     target.mkdir(parents=True, exist_ok=True)

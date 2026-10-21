@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke test of the h3track build on the Jetson, CPU3 without cpuset, 20 s per run:
-#   A/B without job (old binary vs new), h3_frame (old vs new), h3track baseline and with
-#   interfgen (meminterf memcpy 128 MiB on CPU0-2), and user instructions per activation
+#   A/B without job (old binary vs new), h3_frame (old vs new), h3track and h3_frame_track
+#   (frame write, then tracking) baseline and with interfgen (meminterf memcpy 128 MiB on CPU0-2),
+#   and user instructions per activation
 #   (frame_old: the old binary, for h3_frame equivalence):
 #   perf stat over 10 s and 30 s runs, difference / 20000 activations (init cancels out).
 # Run from the build directory (cyclictest-job next to this script). Writes smoke/.
@@ -23,6 +24,7 @@ done
 run frame_old $OLD 20 --job-write=1310720 --job-trace=smoke/frame_old.bin
 run frame_new $NEW 20 --job-write=1310720 --job-trace=smoke/frame_new.bin
 run h3track_baseline $NEW 20 --job-algo=h3track --job-trace=smoke/h3track_baseline.bin
+run frametrack_baseline $NEW 20 --job-write=1310720 --job-algo=h3track --job-trace=smoke/frametrack_baseline.bin
 
 pids=()
 for cpu in 0 1 2; do
@@ -31,16 +33,18 @@ for cpu in 0 1 2; do
 done
 sleep 10
 run h3track_interfgen $NEW 20 --job-algo=h3track --job-trace=smoke/h3track_interfgen.bin
+run frametrack_interfgen $NEW 20 --job-write=1310720 --job-algo=h3track --job-trace=smoke/frametrack_interfgen.bin
 kill "${pids[@]}" 2>/dev/null
 wait 2>/dev/null
 
-for job in none frame frame_old h3track; do
+for job in none frame frame_old h3track frametrack; do
   bin=$NEW
   case $job in
     none) args=() ;;
     frame) args=(--job-write=1310720) ;;
     frame_old) args=(--job-write=1310720); bin=$OLD ;;
     h3track) args=(--job-algo=h3track) ;;
+    frametrack) args=(--job-write=1310720 --job-algo=h3track) ;;
   esac
   for sec in 10 30; do
     perf stat -x, -e instructions:u,cycles:u -o smoke/perf_${job}_$sec.csv -- \
@@ -58,7 +62,7 @@ for f in sorted(glob.glob('smoke/*.json')):
     if name.startswith('perf_'):
         continue
     t = thread(name); j = t.get('job')
-    line = f"{name:20s} cycles {t['cycles']:6d} lat avg {t['avg']/1000:7.3f} max {t['max']/1000:8.2f} us"
+    line = f"{name:22s} cycles {t['cycles']:6d} lat avg {t['avg']/1000:7.3f} max {t['max']/1000:8.2f} us"
     if j:
         line += f" | exec avg {j['exec']['avg']/1000:7.1f} max {j['exec']['max']/1000:7.1f} us | missed {j['missed']}"
         if 'h3' in j:
@@ -71,9 +75,9 @@ def counts(name):
         if len(row) > 2 and row[0].strip().isdigit():
             out[row[2].split(':')[0]] = int(row[0])
     return out, thread(name)['cycles']
-for job in ('none', 'frame', 'frame_old', 'h3track'):
+for job in ('none', 'frame', 'frame_old', 'h3track', 'frametrack'):
     (a, na), (b, nb) = counts(f'perf_{job}_10'), counts(f'perf_{job}_30')
     n = nb - na
-    print(f"{job:9s} per activation: instructions:u {(b['instructions'] - a['instructions']) / n:10.0f}"
+    print(f"{job:10s} per activation: instructions:u {(b['instructions'] - a['instructions']) / n:10.0f}"
           f"  cycles:u {(b['cycles'] - a['cycles']) / n:10.0f}  ({n} activations)")
 PY

@@ -3,9 +3,10 @@
 # di marker di H3 (Ishii et al., IROS 2009, sez. IV): merging delle label divise tra i blocchi e
 # corrispondenza tra frame con la label map (tools/cyclictest-job/h3track.h). Le istruzioni sono quelle
 # dell'algoritmo; sintetici sono solo i dati in ingresso (i momenti che l'FPGA darebbe per l'esperimento
-# del paper: 60 marker su un disco a 26 giri/s, 1000 fps). Binario compilato il 21/10/2026 con
-# tools/cyclictest-job/build.sh: 1,29 M istruzioni e circa 250 µs per attivazione su CPU3
-# (results/jetson-results/cyclictest-job-h3track-20261021/).
+# del paper: 60 marker su un disco a 26 giri/s, 1000 fps). Due profili: h3_track (solo tracking:
+# 1,29 M istruzioni, circa 250 µs per attivazione su CPU3) e h3_frame_track (prima scrive il frame da
+# 1,31 MB, poi esegue il tracking: 1,94 M istruzioni, circa 345 µs). Binario compilato il 21/10/2026
+# con tools/cyclictest-job/build.sh (results/jetson-results/cyclictest-job-h3-20261021/).
 name: thesis_h3track
 victim_cores: [0, 3]
 isolcpu: [0, 3]
@@ -22,7 +23,7 @@ perf_min_running_pct: 90
 # Clock fissi come nelle altre due configurazioni; la policy IRQ deve essere quella di
 # default (maschera 3f) e viene registrata prima e dopo la campagna.
 command-pre-test:
-  - echo "b9966e3e726f17f228d95cb7cb79b8c1f376e29bf7e91662b2febb5a40d2ce68  /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job" | sha256sum -c
+  - echo "c594e2464666504685e33ac8f091df999049a9330e2dca702015b8da8c5f10d1  /home/nvidia/codex-work/cyclictest-job-h3-20261021/cyclictest-job" | sha256sum -c
   - sudo -n jetson_clocks --fan
   - |
     test "$(cat /proc/irq/default_smp_affinity)" = 3f || { echo "IRQ affinity is not the default" >&2; exit 1; }
@@ -45,16 +46,18 @@ perf_passes:
   victim_cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
 
 cyclictest:
-  command: /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job
+  command: /home/nvidia/codex-work/cyclictest-job-h3-20261021/cyclictest-job
   priority: 90
   interval_us: 1000
   # Range in µs; con -N i bucket sono da 1 ns (1000 µs = 1M bucket, 8 MB).
   histogram_us: 1000
 
 # Parte CPU del tracking H3 per ogni frame; prima della misura cyclictest-job verifica il tracking sulla
-# verità a terra (0 errori) e registra nel JSON l'hash dei dati in ingresso.
+# verità a terra (0 errori) e registra nel JSON l'hash dei dati in ingresso. h3_frame_track aggiunge
+# prima del tracking la scrittura del frame 1024 × 1024 a 10 bit in uno slot freddo (come h3_frame).
 jobs:
   h3_track: {algo: h3track}
+  h3_frame_track: {write: 1310720, algo: h3track}
 
 scenarios:
   baseline:

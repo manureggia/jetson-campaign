@@ -14,6 +14,14 @@ Il caso di studio è la piattaforma H3 Vision (Ishii et al., IROS 2009), con due
   freddi. È equivalente in byte e periodo, non in istruzioni.
 - `--job-algo=h3track` (profilo `h3_track`, `campaign-thesis-h3track.yaml`): esegue la parte che in H3 gira
   sul PC, cioè l'algoritmo vero; le istruzioni sono le sue per costruzione.
+- le due opzioni insieme (profilo `h3_frame_track`, stessa campagna): prima scrive il frame, poi esegue il
+  tracking. È il caso peggiore di un sistema in cui il frame passa dalla RAM della CPU; in H3 il frame
+  resta sulla scheda FPGA.
+
+Impronta di `h3track` (contando le linee da 64 B toccate): circa 165 KB di label map letti per attivazione
+più circa 1 KB di ingresso; in tutto il ciclo dei 1000 frame la zona toccata della label map è 194 KB su 2 MB,
+perché i marker stanno su un disco di circa 280 px. Quindi il lavoro di `h3track` sta quasi tutto nella L2
+del core (256 KB). L'impronta da 1,31 MB, sempre fredda, c'è solo con `--job-write`.
 
 ## L'algoritmo `h3track` (`h3track.h`)
 
@@ -48,12 +56,13 @@ piccola (21 × 21) il controllo trova 73.480 errori, quindi il check funziona.
 | Opzione | Significato |
 |---|---|
 | `--job-write=BYTES` | byte scritti per attivazione, in ordine lineare, in uno slot freddo |
-| `--job-algo=h3track` | parte CPU del tracking H3 per ogni attivazione |
+| `--job-algo=h3track` | parte CPU del tracking H3 per ogni attivazione; con `--job-write`, dopo la scrittura |
 | `--job-ring=MIB` | anello di slot di `--job-write`, default 64 MiB: ogni attivazione usa lo slot successivo |
 | `--job-hist-ns=W` | larghezza dei bucket degli istogrammi exec/response, default 100 ns, range 10 ms |
 | `--job-trace=FILE` | a fine run, per ogni ciclo due `uint32` little-endian: latenza ns, exec ns |
 
-Senza `--job-write`/`--job-algo` il ciclo è quello originale. Con il lavoro attivo servono `-N` e `-t 1`.
+Senza `--job-write`/`--job-algo` il ciclo è quello originale. Con tutte e due, in `job` del JSON `write`
+è diverso da 0 e `algo` vale `h3track`. Con il lavoro attivo servono `-N` e `-t 1`.
 Tutta la memoria del lavoro (anello o ingresso e label map), gli istogrammi e la trace sono allocati prima
 dell'avvio, bloccati in memoria e pre-toccati. Se il lavoro supera il periodo, i rilasci saltati vengono
 contati in `job.missed` e non producono campioni di latenza.
@@ -77,8 +86,11 @@ Binari sulla Jetson:
   `--job-read` e `--job-pattern` oltre a `--job-write`. È quella di `campaign-thesis-base-h3.yaml`, che usa
   solo `--job-write`, uguale nelle due versioni.
 - `/home/nvidia/codex-work/cyclictest-job-h3track/`, SHA-256
-  `b9966e3e726f17f228d95cb7cb79b8c1f376e29bf7e91662b2febb5a40d2ce68`: questa patch, compilata il
-  21 ottobre 2026; è quella di `campaign-thesis-h3track.yaml`.
+  `b9966e3e726f17f228d95cb7cb79b8c1f376e29bf7e91662b2febb5a40d2ce68`: `--job-write` e `--job-algo` non
+  combinabili. È quella di `campaign-h3track-interference-cpu3.yaml` (già eseguita).
+- `/home/nvidia/codex-work/cyclictest-job-h3-20261021/`, SHA-256
+  `c594e2464666504685e33ac8f091df999049a9330e2dca702015b8da8c5f10d1`: questa patch, con le due opzioni
+  combinabili; è quella di `campaign-thesis-h3track.yaml`.
 
 ## Verifiche fatte il 14 ottobre 2026 (CPU3 senza cpuset, 20 s per prova)
 
@@ -102,3 +114,14 @@ Log, JSON e trace sono in `results/jetson-results/cyclictest-job-20261014/`.
 La prima build scriveva il frame rileggendo `job.cycles` a ogni scrittura (984k istruzioni invece di
 656k, stessi cicli); corretta con una variabile locale. I risultati di quella build sono in `smoke_v1/`.
 Tutto in `results/jetson-results/cyclictest-job-h3track-20261021/`.
+
+## Verifiche fatte il 21 ottobre 2026, binario con `h3_frame_track`
+
+Stesso `smoke_h3track.sh`, esteso al profilo combinato. Risultati in
+`results/jetson-results/cyclictest-job-h3-20261021/`.
+
+- `h3track`: 1.286.158 istruzioni per attivazione, come la build precedente; exec medio 248,5 µs.
+- `h3_frame_track`: **1.941.562 istruzioni** (la somma di 655.914 della scrittura e 1.286.158 del tracking)
+  e 597.630 cicli per attivazione. Exec medio 345,3 µs, massimo 362,1 µs; con interfgen 410,6 µs,
+  massimo 609,2 µs. Latenza media 3,66 µs, con interfgen 5,81 µs (`h3track` da solo: 3,16 e 4,37 µs).
+  Nessun rilascio saltato, check 0 errori.

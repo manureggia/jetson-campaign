@@ -1,6 +1,6 @@
 --- a/src/cyclictest/cyclictest.c	2026-10-21 14:00:11
-+++ b/src/cyclictest/cyclictest.c	2026-10-21 14:16:19
-@@ -497,7 +497,99 @@
++++ b/src/cyclictest/cyclictest.c	2026-10-21 14:48:00
+@@ -497,7 +497,100 @@
   * - CLOCK_MONOTONIC
   * - CLOCK_REALTIME
   *
@@ -8,11 +8,11 @@
 +
 +/*
 + * cyclictest-job: a job run after each latency sample, from the H3 Vision
-+ * case study (Ishii et al., IROS 2009). Either --job-write: one frame of the
-+ * 1000 fps camera written per activation into a slot of a ring much larger
-+ * than the caches, so the data is cold; or --job-algo=h3track: the software
-+ * part of H3 marker tracking (h3track.h). The latency sample is taken before
-+ * the job and is unchanged.
++ * case study (Ishii et al., IROS 2009). --job-write: one frame of the 1000 fps
++ * camera written per activation into a slot of a ring much larger than the
++ * caches, so the data is cold; --job-algo=h3track: the software part of H3
++ * marker tracking (h3track.h); with both, the frame is written first and then
++ * tracked. The latency sample is taken before the job and is unchanged.
   */
 +#include "h3track.h"
 +
@@ -58,17 +58,18 @@
 +	uint64_t *w, v = job.cycles;	/* local: w may alias job, which would force a reload per store */
 +	unsigned long i, words;
 +
++	if (job.slot_size) {
++		w = (uint64_t *)(job.ring + job.slot * job.slot_size);
++		if (++job.slot == job.slots)
++			job.slot = 0;
++		words = job.slot_size / sizeof(*w);
++		for (i = 0; i < words; i++)
++			w[i] = v + i;
++	}
 +	if (job_h3track) {
 +		h3_track(&job.h3);
 +		job.sink = job.h3.sink;
-+		return;
 +	}
-+	w = (uint64_t *)(job.ring + job.slot * job.slot_size);
-+	if (++job.slot == job.slots)
-+		job.slot = 0;
-+	words = job.slot_size / sizeof(*w);
-+	for (i = 0; i < words; i++)
-+		w[i] = v + i;
 +}
 +
 +static void job_hist_sample(struct job_hist *h, int64_t ns)
@@ -100,7 +101,7 @@
  static void *timerthread(void *param)
  {
  	struct thread_param *par = param;
-@@ -745,6 +837,16 @@
+@@ -745,6 +838,16 @@
  			} else {
  				stat->hist_array[diff]++;
  			}
@@ -117,7 +118,7 @@
  		}
  
  		stat->cycles++;
-@@ -759,6 +861,8 @@
+@@ -759,6 +862,8 @@
  		tsnorm(&next);
  
  		while (tsgreater(&now, &next)) {
@@ -126,19 +127,19 @@
  			next.tv_sec += interval.tv_sec;
  			next.tv_nsec += interval.tv_nsec;
  			tsnorm(&next);
-@@ -875,6 +979,11 @@
+@@ -875,6 +980,11 @@
  	       "                           format: n:c:v n=tasknum c=count v=value in us\n"
  	       "	 --dbg_cyclictest  print info useful for debugging cyclictest\n"
  	       "-x	 --posix_timers    use POSIX timers instead of clock_nanosleep.\n"
 +	       "         --job-write=BYTES after each sample write BYTES of cold data (requires -N, -t 1)\n"
-+	       "         --job-algo=h3track  after each sample run H3 Vision marker tracking (requires -N, -t 1)\n"
++	       "         --job-algo=h3track  after each sample run H3 Vision marker tracking, after --job-write if given\n"
 +	       "         --job-ring=MIB    size of the ring of --job-write slots (default 64)\n"
 +	       "         --job-hist-ns=W   bucket width of the job histograms (default 100)\n"
 +	       "         --job-trace=FILE  write latency_ns, exec_ns (uint32) per cycle at exit\n"
  		);
  	if (error)
  		exit(EXIT_FAILURE);
-@@ -955,6 +1064,8 @@
+@@ -955,6 +1065,8 @@
  	OPT_DBGCYCLIC, OPT_POLICY, OPT_HELP, OPT_NUMOPTS,
  	OPT_ALIGNED, OPT_SECALIGNED, OPT_LAPTOP, OPT_SMI,
  	OPT_TRACEMARK, OPT_POSIX_TIMERS,
@@ -147,7 +148,7 @@
  };
  
  /* Process commandline options */
-@@ -1009,6 +1120,11 @@
+@@ -1009,6 +1121,11 @@
  			{"policy",           required_argument, NULL, OPT_POLICY },
  			{"help",             no_argument,       NULL, OPT_HELP },
  			{"posix_timers",     no_argument,	NULL, OPT_POSIX_TIMERS },
@@ -159,7 +160,7 @@
  			{NULL, 0, NULL, 0 },
  		};
  		int c = getopt_long(argc, argv, "a::A::b:c:d:D:h:H:i:l:MNo:p:mqrRsSt::uvD:x",
-@@ -1175,6 +1291,23 @@
+@@ -1175,6 +1292,23 @@
  		case 'x':
  		case OPT_POSIX_TIMERS:
  			use_nanosleep = MODE_CYCLIC; break;
@@ -183,7 +184,7 @@
  		case '?':
  		case OPT_HELP:
  			display_help(0); break;
-@@ -1745,8 +1878,125 @@
+@@ -1745,8 +1879,124 @@
  rstat_err:
  	rstat_fd = -1;
  	return;
@@ -210,8 +211,6 @@
 +
 +	if (!use_nsecs || num_threads != 1)
 +		fatal("cyclictest-job: --job-write/--job-algo require -N and -t 1\n");
-+	if (job_write && job_h3track)
-+		fatal("cyclictest-job: use either --job-write or --job-algo\n");
 +	job.on = 1;
 +	if (job_h3track) {
 +		job.h3.labels = job_alloc(H3_LABELS_MAX * sizeof(*job.h3.labels));
@@ -225,7 +224,8 @@
 +		job.h3_errors = h3_check(&job.h3, 2);
 +		if (job.h3_errors)
 +			fatal("cyclictest-job: h3track check failed, %lu errors\n", job.h3_errors);
-+	} else {
++	}
++	if (job_write) {
 +		job.slot_size = (job_write + JOB_LINE - 1) / JOB_LINE * JOB_LINE;
 +		job.slots = job_ring_mib * 1048576UL / job.slot_size;
 +		if (job.slots < 2)

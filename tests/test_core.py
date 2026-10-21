@@ -59,12 +59,13 @@ class CoreTests(unittest.TestCase):
 
     def test_job_dimension(self):
         jobs = {"none": None, "h3_frame": {"write": 1310720},
-                "track": {"algo": "h3track", "interval_us": 10000}}
+                "track": {"algo": "h3track", "interval_us": 10000},
+                "frame_track": {"write": 1310720, "algo": "h3track"}}
         c = validate({"victim_cores": [3], "repetitions": 2, "profiling": {"enabled": False},
                       "randomization": {"enabled": True, "seed": 1}, "jobs": jobs})
         items = matrix(c)
-        self.assertEqual(len(items), 6)
-        self.assertEqual(sorted(i["job"] for i in items if i["run"] == 1), ["h3_frame", "none", "track"])
+        self.assertEqual(len(items), 8)
+        self.assertEqual(sorted(i["job"] for i in items if i["run"] == 1), ["frame_track", "h3_frame", "none", "track"])
         self.assertEqual(attempt_relative(items[0], 1).count("/job_"), 1)
         argv = cyclic_command(c, 3, 60, self.out, "track")
         self.assertEqual(argv[argv.index("-i") + 1], "10000")
@@ -73,13 +74,16 @@ class CoreTests(unittest.TestCase):
         argv = cyclic_command(c, 3, 60, self.out, "h3_frame")
         self.assertEqual([a for a in argv if a.startswith("--job")],
                          ["--job-write=1310720", f"--job-trace={self.out / 'job_trace.bin'}"])
+        argv = cyclic_command(c, 3, 60, self.out, "frame_track")
+        self.assertEqual([a for a in argv if a.startswith("--job")],
+                         ["--job-write=1310720", "--job-algo=h3track", f"--job-trace={self.out / 'job_trace.bin'}"])
         # A job without memory traffic runs the unmodified loop.
         self.assertFalse(any(a.startswith("--job") for a in cyclic_command(c, 3, 60, self.out, "none")))
         plain = validate({"victim_cores": [3], "profiling": {"enabled": False}})
         self.assertNotIn("job", matrix(plain)[0])
         self.assertEqual(attempt_relative(matrix(plain)[0], 1), "core3/baseline/measurement_001/attempt_001")
         for bad in ({"x": {"write": -1}}, {"x": {"read": 1}}, {"x": {"algo": "chase"}},
-                    {"x": {"algo": "h3track", "write": 1}}, {"x": {"size": 1}}, {"X": {}}):
+                    {"x": {"size": 1}}, {"X": {}}):
             with self.assertRaises(ValueError):
                 validate({"victim_cores": [3], "jobs": bad})
 

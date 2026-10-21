@@ -189,7 +189,8 @@ def cyclic_command(c, cpu, duration, directory, job=None):
             "--histfile=/dev/null", *ct["extra_args"]]
     if spec.get("algo") or spec.get("write"):
         # Patched cyclictest (tools/cyclictest-job): job after each latency sample.
-        argv += [f"--job-algo={spec['algo']}" if spec.get("algo") else f"--job-write={spec['write']}",
+        argv += [*([f"--job-write={spec['write']}"] if spec.get("write") else []),
+                 *([f"--job-algo={spec['algo']}"] if spec.get("algo") else []),
                  f"--job-trace={directory / 'job_trace.bin'}"]
     return argv
 

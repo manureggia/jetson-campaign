@@ -17,7 +17,8 @@ import matplotlib.pyplot as plt
 # Colors and layout of the thesis latency figures (Baseline / INTERFGEN / tkHPick).
 SCENARIOS = {'baseline': 'Baseline', 'interfgen': 'INTERFGEN', 'demo': 'tkHPick'}
 COLORS = {'baseline': '#cbcbc4', 'interfgen': '#3a5c4b', 'demo': '#bb9841'}
-LABELS = {'none': 'Nessun lavoro', 'h3_frame': 'Frame H3\nscrittura 1,31 MB', 'h3_track': 'Tracking H3\n60 marker'}
+LABELS = {'none': 'Nessun lavoro', 'h3_frame': 'Frame H3\nscrittura 1,31 MB', 'h3_track': 'Tracking H3\n60 marker',
+          'h3_frame_track': 'Frame + tracking H3\n1,31 MB'}
 CACHES = [('l1d', 'L1 dati', 'cache_l1'), ('l1i', 'L1 istruzioni', 'cache_l1'),
           ('l2', 'L2', 'cache_l2_l3'), ('l3', 'L3 (attribuibile al core)', 'cache_l2_l3')]
 INK, MUTED, GRID = '#212b26', '#212b26', '#e7e9e4'

@@ -1,0 +1,67 @@
+# Prova breve: il job h3track (parte CPU del tracking H3 Vision) subisce più interferenza?
+# CPU3 in partizione cpuset esclusiva, affinità IRQ di default, una run da 5 minuti per scenario
+# (interfgen e tkHPick/demo CEM), solo latenza: la passata non avvia perf, quindi sulla vittima non ci
+# sono interrupt di overflow dei contatori PMU. Binario e risultati della build in
+# results/jetson-results/cyclictest-job-h3track-20261021/.
+name: h3track_interference_cpu3
+victim_cores: [3]
+isolcpu: [3]
+perf_cpus: [4, 5]
+repetitions: 1
+randomization:
+  enabled: true
+  seed: 424242
+duration_s: 300
+cooldown_s: 0
+results_dir: results/thesis
+perf_min_running_pct: 90
+
+command-pre-test:
+  - echo "b9966e3e726f17f228d95cb7cb79b8c1f376e29bf7e91662b2febb5a40d2ce68  /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job" | sha256sum -c
+  - sudo -n jetson_clocks --fan
+  - |
+    test "$(cat /proc/irq/default_smp_affinity)" = 3f || { echo "IRQ affinity is not the default" >&2; exit 1; }
+    echo "default $(cat /proc/irq/default_smp_affinity)"
+    for d in /proc/irq/[0-9]*; do echo "irq ${d##*/} requested=$(cat $d/smp_affinity_list) effective=$(cat $d/effective_affinity_list 2>/dev/null)"; done
+    for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null) || continue; case $c in irq/*) echo "thread ${p#/proc/} $c $(taskset -pc ${p#/proc/} 2>/dev/null | sed 's/.*: //')";; esac; done
+command-post-test:
+  - |
+    echo "default $(cat /proc/irq/default_smp_affinity)"
+    for d in /proc/irq/[0-9]*; do echo "irq ${d##*/} requested=$(cat $d/smp_affinity_list) effective=$(cat $d/effective_affinity_list 2>/dev/null)"; done
+    for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null) || continue; case $c in irq/*) echo "thread ${p#/proc/} $c $(taskset -pc ${p#/proc/} 2>/dev/null | sed 's/.*: //')";; esac; done
+
+# Lista vuota: passata di sola latenza, senza perf.
+perf_passes:
+  latency: []
+
+cyclictest:
+  command: /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job
+  priority: 90
+  interval_us: 1000
+  # Range in µs; con -N i bucket sono da 1 ns (1000 µs = 1M bucket, 8 MB).
+  histogram_us: 1000
+
+jobs:
+  h3_track: {algo: h3track}
+
+scenarios:
+  baseline:
+    enabled: false
+  interfgen:
+    enabled: true
+    placement: same_cluster
+    warmup_s: 10
+    command: >
+      /home/nvidia/hesoc-mark/membench/meminterf
+      --size=128 --iterations=1000000 --test=memcpy
+  demo:
+    enabled: true
+    placement: same_cluster
+    profile: demos/cem_thesis.yaml
+
+profiling:
+  enabled: false
+recovery:
+  max_retries: 2
+llm:
+  enabled: false

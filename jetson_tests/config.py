@@ -97,8 +97,10 @@ def validate(config):
             if (not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", name)
                     or name in {"profiling", "victim_"}):
                 raise ValueError(f"Invalid perf_passes name: {name}")
-            if not isinstance(events, list) or not events or any(not isinstance(e, str) for e in events):
-                raise ValueError(f"perf_passes.{name} must be a nonempty list of event names")
+            # An empty list is a latency-only pass: no perf, so no PMU overflow interrupts on the victim.
+            if (not isinstance(events, list) or any(not isinstance(e, str) for e in events)
+                    or (not events and name.startswith("victim_"))):
+                raise ValueError(f"perf_passes.{name} must be a list of event names, nonempty for victim_ passes")
             if len(set(events)) != len(events):
                 raise ValueError(f"perf_passes.{name} events must be unique")
             for event in events:
@@ -125,7 +127,7 @@ def validate(config):
         raise ValueError("extra_args permits only --verbose/-v and --unbuffered/-u; protocol flags are managed")
     if "jobs" in c:
         # Job of the patched cyclictest (tools/cyclictest-job), one matrix dimension: bytes written
-        # per activation (H3 Vision frame) or the H3 tracking algorithm.
+        # per activation (H3 Vision frame), the H3 tracking algorithm, or both (write, then track).
         jobs = c["jobs"]
         if not isinstance(jobs, dict) or not jobs:
             raise ValueError("jobs must be a nonempty mapping of job names to settings")
@@ -136,8 +138,8 @@ def validate(config):
             keys(job, "write algo interval_us", f"jobs.{name}")
             job.setdefault("write", 0)
             positive(job["write"], f"jobs.{name}.write", zero=True, integer=True)
-            if job.get("algo") not in {None, "h3track"} or (job.get("algo") and job["write"]):
-                raise ValueError(f"jobs.{name}: algo must be h3track, without write")
+            if job.get("algo") not in {None, "h3track"}:
+                raise ValueError(f"jobs.{name}.algo must be h3track")
             if "interval_us" in job:
                 positive(job["interval_us"], f"jobs.{name}.interval_us", integer=True)
     scenarios = c.setdefault("scenarios", {"baseline": {"enabled": True}})

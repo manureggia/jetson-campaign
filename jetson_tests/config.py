@@ -124,7 +124,8 @@ def validate(config):
     if not isinstance(ct["extra_args"], list) or any(x not in allowed_extra for x in ct["extra_args"]):
         raise ValueError("extra_args permits only --verbose/-v and --unbuffered/-u; protocol flags are managed")
     if "jobs" in c:
-        # Synthetic memory job of the patched cyclictest (tools/cyclictest-job), one matrix dimension.
+        # Job of the patched cyclictest (tools/cyclictest-job), one matrix dimension: bytes written
+        # per activation (H3 Vision frame) or the H3 tracking algorithm.
         jobs = c["jobs"]
         if not isinstance(jobs, dict) or not jobs:
             raise ValueError("jobs must be a nonempty mapping of job names to settings")
@@ -132,13 +133,11 @@ def validate(config):
             if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9_]+", name):
                 raise ValueError(f"Invalid job name: {name}")
             job = jobs[name] = jobs[name] or {}
-            keys(job, "read write pattern interval_us", f"jobs.{name}")
-            for key in ("read", "write"):
-                job.setdefault(key, 0)
-                positive(job[key], f"jobs.{name}.{key}", zero=True, integer=True)
-            job.setdefault("pattern", "seq")
-            if job["pattern"] not in {"seq", "chase"} or (job["pattern"] == "chase" and not job["read"]):
-                raise ValueError(f"jobs.{name}.pattern must be seq, or chase with read > 0")
+            keys(job, "write algo interval_us", f"jobs.{name}")
+            job.setdefault("write", 0)
+            positive(job["write"], f"jobs.{name}.write", zero=True, integer=True)
+            if job.get("algo") not in {None, "h3track"} or (job.get("algo") and job["write"]):
+                raise ValueError(f"jobs.{name}: algo must be h3track, without write")
             if "interval_us" in job:
                 positive(job["interval_us"], f"jobs.{name}.interval_us", integer=True)
     scenarios = c.setdefault("scenarios", {"baseline": {"enabled": True}})

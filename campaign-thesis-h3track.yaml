@@ -1,59 +1,60 @@
-# cyclictest-job con contatori di cache: come campaign-job-pilot.yaml (CPU3 in cpuset con IRQ esclusi),
-# profili a 1 ms e pass core + cache_l1 + cache_l2_l3 come nelle campagne della tesi.
-# 1 ripetizione da 60 s per pass.
-name: job_cache_cpu3
-victim_cores: [3]
-isolcpu: [3]
+# Tesi, H3 Vision con l'algoritmo vero: stessa configurazione di campaign-thesis-base-h3.yaml (stessi core,
+# isolcpu, IRQ, passate e scenari), ma dopo ogni campione cyclictest esegue la parte software del tracking
+# di marker di H3 (Ishii et al., IROS 2009, sez. IV): merging delle label divise tra i blocchi e
+# corrispondenza tra frame con la label map (tools/cyclictest-job/h3track.h). Le istruzioni sono quelle
+# dell'algoritmo; sintetici sono solo i dati in ingresso (i momenti che l'FPGA darebbe per l'esperimento
+# del paper: 60 marker su un disco a 26 giri/s, 1000 fps). Richiede il binario con --job-algo:
+# compilarlo con tools/cyclictest-job/build.sh e inserire qui sotto il suo SHA-256 (finché c'è il
+# segnaposto il pre-test fallisce e la campagna non parte).
+name: thesis_h3track
+victim_cores: [0, 3]
+isolcpu: [0, 3]
 perf_cpus: [4, 5]
-repetitions: 1
+repetitions: 3
 randomization:
   enabled: true
   seed: 424242
-duration_s: 60
+duration_s: 300
 cooldown_s: 0
 results_dir: results/thesis
 perf_min_running_pct: 90
 
-# Stessi hook della configurazione cpuset + IRQ, più il controllo del binario modificato.
+# Clock fissi come nelle altre due configurazioni; la policy IRQ deve essere quella di
+# default (maschera 3f) e viene registrata prima e dopo la campagna.
 command-pre-test:
-  - echo "9928a217f39cd04ad628dd0cf75e5edfdaf576a1940a02fea779aee59637c739  /home/nvidia/codex-work/cyclictest-job-20261014/cyclictest-job" | sha256sum -c
+  - echo "SHA256_DA_INSERIRE_DOPO_LA_BUILD  /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job" | sha256sum -c
   - sudo -n jetson_clocks --fan
   - |
-    set -e
     test "$(cat /proc/irq/default_smp_affinity)" = 3f || { echo "IRQ affinity is not the default" >&2; exit 1; }
-    mkdir irq_isolation
-    cp /home/nvidia/codex-work/cpu3-irq-isolation-2026-10-09/cpu3_irq.py irq_isolation/
-    echo "76f8d84b330096a96e5d6d21b9003220c9903a1d9577fb64eeea1b439f66b665  irq_isolation/cpu3_irq.py" | sha256sum -c
-    sudo -n python3 irq_isolation/cpu3_irq.py apply
-    test "$(cat /proc/irq/default_smp_affinity)" = 37
     echo "default $(cat /proc/irq/default_smp_affinity)"
     for d in /proc/irq/[0-9]*; do echo "irq ${d##*/} requested=$(cat $d/smp_affinity_list) effective=$(cat $d/effective_affinity_list 2>/dev/null)"; done
     for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null) || continue; case $c in irq/*) echo "thread ${p#/proc/} $c $(taskset -pc ${p#/proc/} 2>/dev/null | sed 's/.*: //')";; esac; done
 command-post-test:
   - |
-    sudo -n python3 irq_isolation/cpu3_irq.py restore
-    test "$(cat /proc/irq/default_smp_affinity)" = 3f
     echo "default $(cat /proc/irq/default_smp_affinity)"
     for d in /proc/irq/[0-9]*; do echo "irq ${d##*/} requested=$(cat $d/smp_affinity_list) effective=$(cat $d/effective_affinity_list 2>/dev/null)"; done
     for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null) || continue; case $c in irq/*) echo "thread ${p#/proc/} $c $(taskset -pc ${p#/proc/} 2>/dev/null | sed 's/.*: //')";; esac; done
 
+# Sei eventi programmabili per passata, più cycles sul contatore dedicato.
 perf_passes:
   core: [cycles, instructions:u, instructions:k, backend_stall, memory_stall, memory_accesses, bus_accesses, task_clock]
   cache_l1: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads, l1i_accesses, l1i_refills, l1i_long_misses]
   cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
+  victim_core: [cycles, instructions:u, instructions:k, backend_stall, memory_stall, memory_accesses, bus_accesses, task_clock]
+  victim_cache_l1: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads, l1i_accesses, l1i_refills, l1i_long_misses]
+  victim_cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
 
 cyclictest:
-  command: /home/nvidia/codex-work/cyclictest-job-20261014/cyclictest-job
+  command: /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job
   priority: 90
   interval_us: 1000
+  # Range in µs; con -N i bucket sono da 1 ns (1000 µs = 1M bucket, 8 MB).
   histogram_us: 1000
 
-# Byte letti/scritti per attivazione dal modello Amalthea WATERS 2019 (kB = 1000 B).
+# Parte CPU del tracking H3 per ogni frame; prima della misura cyclictest-job verifica il tracking sulla
+# verità a terra (0 errori) e registra nel JSON l'hash dei dati in ingresso.
 jobs:
-  none:
-  dasm: {read: 2000, write: 2000}
-  planner_seq: {read: 1280256, write: 2000, pattern: seq}
-  lidar_seq: {read: 1500000, write: 2000000, pattern: seq}
+  h3_track: {algo: h3track}
 
 scenarios:
   baseline:

@@ -25,8 +25,7 @@ import matplotlib.pyplot as plt
 OUT = Path(sys.argv[1])
 rows = list(csv.DictReader((OUT / 'phase_pmu_job.csv').open()))
 present = {(r['profile'], r['scenario']) for r in rows}
-NAMES = {'none': 'Nessun lavoro', 'dasm': 'DASM\n2 + 2 kB', 'planner_seq': 'Planner seq.\n1,28 MB',
-         'lidar_seq': 'Lidar seq.\n1,5 + 2 MB'}
+NAMES = {'none': 'Nessun lavoro', 'h3_frame': 'Frame H3\nscrittura 1,31 MB'}
 LOADS = [('cem', 'tkHPick (demo CEM)'), ('interfgen', 'Interfgen')]
 PARTS = [('data', 'Attesa di dati dalla memoria', '#454C47', None),
          ('frontend', 'Attesa di istruzioni (stall del frontend)', '#97A39C', None),

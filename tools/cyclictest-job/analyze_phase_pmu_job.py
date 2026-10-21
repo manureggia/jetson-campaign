@@ -19,7 +19,7 @@ MHZ = 1728.0
 EVENTS = ['cycles', 'inst', 'stall_fe', 'stall_be', 'stall_mem']
 LINE = re.compile(r'^PHASE (\w+) n=(\d+) ns=(\d+) (.*)$')
 GROUPS = {'win': ['W1', 'W2', 'W3', 'W4'], 'W1': ['W1'], 'W2': ['W2'], 'W3': ['W3'], 'W4': ['W4'], 'job': ['O1']}
-ORDER = ['none', 'dasm', 'planner_seq', 'lidar_seq', 'none_10ms', 'planner_chase', 'lidar_chase']
+ORDER = ['none', 'h3_frame']
 COLORS = {'baseline': '#2a78d6', 'interfgen': '#eb6834', 'cem': '#1baf7a'}
 SCEN_LABEL = {'baseline': 'Baseline', 'interfgen': 'Interfgen', 'cem': 'CEM (tkHPick)'}
 OUT = Path(sys.argv[1])
@@ -78,7 +78,7 @@ text += ['', '## Differenze (µs per iterazione)', '',
          '|---|---|---|---|---|---|---|']
 points = []
 for p in profiles:
-    ref = 'none_10ms' if p in ('none_10ms', 'planner_chase', 'lidar_chase') else 'none'
+    ref = 'none'
     pairs = [(f'{s} vs baseline', (p, s), (p, 'baseline')) for s in scenarios if s != 'baseline']
     if p != ref:
         pairs += [(f'vs {ref}, {s}', (p, s), (ref, s)) for s in scenarios]

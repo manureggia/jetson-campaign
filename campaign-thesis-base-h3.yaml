@@ -52,7 +52,7 @@ cyclictest:
 # 1024 × 1024 pixel × 10 bit = 1.310.720 B, scritti in ordine lineare in uno slot freddo dell'anello
 # da 64 MiB (51 slot), come il frame che l'FPGA scrive in memoria a ogni periodo.
 jobs:
-  h3_frame: {write: 1310720, pattern: seq}
+  h3_frame: {write: 1310720}
 
 scenarios:
   baseline:

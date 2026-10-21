@@ -96,9 +96,13 @@ def cyclictest(path, victim):
         raise ValueError("Missing cyclictest summary")
     job = thread.get("job")
     if job:
-        result.update(job_read=job["read"], job_write=job["write"], job_pattern=job["pattern"],
+        # Binaries before h3track have no algo (and also read memory: read, pattern).
+        result.update(job_write=job["write"], job_algo=job.get("algo"),
                       job_cycles=job["cycles"], job_missed=job["missed"],
                       **job_times(job, "exec"), **job_times(job, "response"))
+        if "h3" in job:
+            result.update(job_h3_input_hash=job["h3"]["input_hash"], job_h3_check_errors=job["h3"]["check_errors"],
+                          job_h3_matched=job["h3"]["matched"], job_h3_created=job["h3"]["created"])
     return result
 
 

@@ -24,18 +24,13 @@ declare -A DEMO_CMD=(
 )
 HELPER=/usr/local/sbin/jetson-campaign-cgroup
 MODES=${MODES:-none fine}
-PROFILES=${PROFILES:-none dasm planner_seq lidar_seq}
+PROFILES=${PROFILES:-none h3_frame}
 REPS=${1:-2}
 DUR=${2:-30}
-# Bytes from the WATERS 2019 Amalthea model, as in campaign-job-pilot.yaml.
+# One 1024x1024 10-bit H3 Vision frame written per period, as in campaign-thesis-base-h3.yaml.
 declare -A ARGS=(
   [none]="-i 1000"
-  [dasm]="-i 1000 --job-read=2000 --job-write=2000"
-  [planner_seq]="-i 1000 --job-read=1280256 --job-write=2000 --job-pattern=seq"
-  [lidar_seq]="-i 1000 --job-read=1500000 --job-write=2000000 --job-pattern=seq"
-  [none_10ms]="-i 10000"
-  [planner_chase]="-i 10000 --job-read=1280256 --job-write=2000 --job-pattern=chase"
-  [lidar_chase]="-i 10000 --job-read=1500000 --job-write=2000000 --job-pattern=chase"
+  [h3_frame]="-i 1000 --job-write=1310720"
 )
 PIDS=()
 CG=""

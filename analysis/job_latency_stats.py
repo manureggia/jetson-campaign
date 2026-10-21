@@ -19,8 +19,7 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 SCENARIOS = [('baseline', 'Baseline', '#cbcbc4'), ('interfgen', 'INTERFGEN', '#3a5c4b'), ('demo', 'tkHPick', '#bb9841')]
 STATS = [('mean_us', 'Media', statistics.mean), ('p99_us', 'P99', statistics.mean),
          ('p99_9_us', 'P99,9', statistics.mean), ('max_us', 'Massimo', max)]
-JOBS = {'none': 'nessun lavoro', 'dasm': 'DASM', 'planner_seq': 'Planner seq. 1,28 MB', 'lidar_seq': 'Lidar seq. 1,5 + 2 MB',
-        'h3_frame': 'frame H3 Vision, scrittura 1,31 MB'}
+JOBS = {'none': 'nessun lavoro', 'h3_frame': 'frame H3 Vision, scrittura 1,31 MB', 'h3_track': 'tracking H3 Vision, 60 marker'}
 INK, GRID, AXIS = '#212b26', '#e7e9e4', '#afb5af'
 plt.rcParams.update({'font.family': ['Helvetica', 'DejaVu Sans'], 'font.size': 9, 'axes.spines.top': False,
                      'axes.spines.right': False, 'axes.edgecolor': AXIS, 'text.color': INK, 'axes.labelcolor': INK,

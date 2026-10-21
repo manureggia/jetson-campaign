@@ -3,8 +3,9 @@
 Groups Media / P99 / P99,9 / Massimo, bars Baseline / INTERFGEN / tkHPick, logarithmic y axis.
 Across repetitions: mean of the means, mean of the P99 and of the P99.9, max of the maxima.
 One panel per victim CPU (and per job profile if the campaign has more than one).
-Usage: .venv/bin/python analysis/job_latency_stats.py results/thesis/<campaign>
-Reads report/runs.csv (PASS measurements); writes report/figure_tesi/latenza_statistiche.{pdf,svg}.
+Usage: .venv/bin/python analysis/job_latency_stats.py results/thesis/<campaign> [<campaign> ...]
+Reads report/runs.csv (PASS measurements); with several campaigns, side by side panels on the same
+axis, in the order given. Writes report/figure_tesi/latenza_statistiche.{pdf,svg} of the last one.
 """
 import argparse
 import csv
@@ -34,14 +35,18 @@ def label(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('campaign', type=Path)
-    campaign = parser.parse_args().campaign.resolve()
-    data = {}
-    with (campaign / 'report/runs.csv').open() as stream:
-        for row in csv.DictReader(stream):
-            if row['status'] == 'PASS' and row['kind'] == 'measurement':
-                data.setdefault((row['core'], row.get('job') or ''), {}).setdefault(row['scenario'], []).append(row)
-    panels = sorted(data)
+    parser.add_argument('campaign', type=Path, nargs='+')
+    campaigns = [path.resolve() for path in parser.parse_args().campaign]
+    data, panels = {}, []
+    for campaign in campaigns:
+        with (campaign / 'report/runs.csv').open() as stream:
+            rows = [row for row in csv.DictReader(stream) if row['status'] == 'PASS' and row['kind'] == 'measurement']
+        keys = sorted({(row['core'], row.get('job') or '') for row in rows})
+        if any(key in data for key in keys):
+            raise SystemExit(f'{campaign.name}: CPU and job already in an earlier campaign')
+        for row in rows:
+            data.setdefault((row['core'], row.get('job') or ''), {}).setdefault(row['scenario'], []).append(row)
+        panels += keys
     # Only the scenarios the campaign ran, centred on each group.
     scenarios = [s for s in SCENARIOS if any(s[0] in data[panel] for panel in panels)]
     fig, axes = plt.subplots(1, len(panels), figsize=(5.2 * len(panels), 3.4), sharey=True, squeeze=False)
@@ -71,7 +76,7 @@ def main():
     fig.legend([plt.Rectangle((0, 0), 1, 1, color=c) for _, _, c in scenarios], [n for _, n, _ in scenarios],
                loc='upper center', ncol=len(scenarios), bbox_to_anchor=(.5, 1.02), handlelength=1.2, columnspacing=2)
     fig.tight_layout(rect=(0, 0, 1, .9))
-    target = campaign / 'report/figure_tesi'
+    target = campaigns[-1] / 'report/figure_tesi'
     target.mkdir(parents=True, exist_ok=True)
     for ext in ('pdf', 'svg'):
         fig.savefig(target / f'latenza_statistiche.{ext}')

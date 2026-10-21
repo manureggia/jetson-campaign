@@ -1,0 +1,79 @@
+# Tesi, configurazione 1 (base: CPU0 e CPU3 senza cpuset, affinità IRQ di default, sei passate come
+# campaign-thesis-base.yaml; la vittima è condivisa, quindi ci sono anche le passate victim_*)
+# con cyclictest-job e il profilo h3_frame_track (H3 Vision, Ishii et al., IROS 2009): dopo ogni campione
+# scrive il frame da 1,31 MB e poi esegue il tracking dei marker. Solo h3_frame_track, senza profilo none:
+# il riferimento senza lavoro è la campagna di tesi corrispondente. 3 ripetizioni da 180 s per passata.
+# Binario e verifiche in results/jetson-results/cyclictest-job-h3-20261021/.
+name: thesis_base_h3frametrack
+victim_cores: [0, 3]
+isolcpu: []
+perf_cpus: [4, 5]
+repetitions: 3
+randomization:
+  enabled: true
+  seed: 424242
+duration_s: 180
+cooldown_s: 0
+results_dir: results/thesis
+perf_min_running_pct: 90
+
+# Clock fissi come nelle altre due configurazioni; la policy IRQ deve essere quella di
+# default (maschera 3f) e viene registrata prima e dopo la campagna.
+command-pre-test:
+  - echo "c594e2464666504685e33ac8f091df999049a9330e2dca702015b8da8c5f10d1  /home/nvidia/codex-work/cyclictest-job-h3-20261021/cyclictest-job" | sha256sum -c
+  - sudo -n jetson_clocks --fan
+  - |
+    test "$(cat /proc/irq/default_smp_affinity)" = 3f || { echo "IRQ affinity is not the default" >&2; exit 1; }
+    echo "default $(cat /proc/irq/default_smp_affinity)"
+    for d in /proc/irq/[0-9]*; do echo "irq ${d##*/} requested=$(cat $d/smp_affinity_list) effective=$(cat $d/effective_affinity_list 2>/dev/null)"; done
+    for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null) || continue; case $c in irq/*) echo "thread ${p#/proc/} $c $(taskset -pc ${p#/proc/} 2>/dev/null | sed 's/.*: //')";; esac; done
+command-post-test:
+  - |
+    echo "default $(cat /proc/irq/default_smp_affinity)"
+    for d in /proc/irq/[0-9]*; do echo "irq ${d##*/} requested=$(cat $d/smp_affinity_list) effective=$(cat $d/effective_affinity_list 2>/dev/null)"; done
+    for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null) || continue; case $c in irq/*) echo "thread ${p#/proc/} $c $(taskset -pc ${p#/proc/} 2>/dev/null | sed 's/.*: //')";; esac; done
+
+# Sei eventi programmabili per passata, più cycles sul contatore dedicato.
+perf_passes:
+  core: [cycles, instructions:u, instructions:k, backend_stall, memory_stall, memory_accesses, bus_accesses, task_clock]
+  cache_l1: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads, l1i_accesses, l1i_refills, l1i_long_misses]
+  cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
+  victim_core: [cycles, instructions:u, instructions:k, backend_stall, memory_stall, memory_accesses, bus_accesses, task_clock]
+  victim_cache_l1: [cycles, l1d_accesses, l1d_refills, l1d_long_miss_reads, l1i_accesses, l1i_refills, l1i_long_misses]
+  victim_cache_l2_l3: [cycles, l2_accesses, l2_refills, l2_long_miss_reads, l3_accesses, l3_refills, l3_long_miss_reads]
+
+cyclictest:
+  command: /home/nvidia/codex-work/cyclictest-job-h3-20261021/cyclictest-job
+  priority: 90
+  interval_us: 1000
+  # Range in µs; con -N i bucket sono da 1 ns (1000 µs = 1M bucket, 8 MB).
+  histogram_us: 1000
+
+# Frame 1024 × 1024 a 10 bit (1.310.720 B) scritto in uno slot freddo, poi la parte CPU del tracking H3
+# (1,94 M istruzioni, circa 345 µs per attivazione su CPU3). Prima della misura cyclictest-job verifica il
+# tracking sulla verità a terra e registra nel JSON l'hash dei dati in ingresso.
+jobs:
+  h3_frame_track: {write: 1310720, algo: h3track}
+
+scenarios:
+  baseline:
+    enabled: true
+    warmup_s: 10
+  interfgen:
+    enabled: true
+    placement: same_cluster
+    warmup_s: 10
+    command: >
+      /home/nvidia/hesoc-mark/membench/meminterf
+      --size=128 --iterations=1000000 --test=memcpy
+  demo:
+    enabled: true
+    placement: same_cluster
+    profile: demos/cem_thesis.yaml
+
+profiling:
+  enabled: false
+recovery:
+  max_retries: 2
+llm:
+  enabled: false

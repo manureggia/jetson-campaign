@@ -10,6 +10,12 @@ misurata esattamente come nel cyclictest originale. In più, per ogni ciclo, ven
 Le impronte vengono dal modello Amalthea del WATERS Industrial Challenge 2019 (Bosch e UNIMORE):
 per esempio il Planner legge 1,28 MB per attivazione e il Lidar Grabber legge 1,5 MB e ne scrive 2.
 
+Il profilo `h3_frame` (`campaign-thesis-base-h3.yaml`) scrive invece 1.310.720 B per attivazione: un
+frame 1024 × 1024 a 10 bit per periodo da 1 ms, come a 1000 fps nella piattaforma H3 Vision (Ishii et al.,
+IROS 2009). È equivalente in byte e periodo, non in istruzioni: nel paper il frame è elaborato su FPGA e
+non c'è un programma per CPU di cui replicare il numero di istruzioni. Le istruzioni del lavoro sono
+quelle del ciclo di scrittura (circa 164k parole da 8 B), da misurare con `instructions:u`.
+
 ## Opzioni aggiunte
 
 | Opzione | Significato |

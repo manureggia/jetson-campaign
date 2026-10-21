@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 SCENARIOS = {'baseline': 'Baseline', 'interfgen': 'INTERFGEN', 'demo': 'tkHPick'}
 COLORS = {'baseline': '#cbcbc4', 'interfgen': '#3a5c4b', 'demo': '#bb9841'}
 LABELS = {'none': 'Nessun lavoro', 'dasm': 'DASM\n2 + 2 kB', 'planner_seq': 'Planner seq.\n1,28 MB',
-          'lidar_seq': 'Lidar seq.\n1,5 + 2 MB'}
+          'lidar_seq': 'Lidar seq.\n1,5 + 2 MB', 'h3_frame': 'Frame H3\nscrittura 1,31 MB'}
 CACHES = [('l1d', 'L1 dati', 'cache_l1'), ('l1i', 'L1 istruzioni', 'cache_l1'),
           ('l2', 'L2', 'cache_l2_l3'), ('l3', 'L3 (attribuibile al core)', 'cache_l2_l3')]
 INK, MUTED, GRID = '#212b26', '#212b26', '#e7e9e4'

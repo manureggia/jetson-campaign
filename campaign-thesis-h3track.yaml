@@ -3,9 +3,9 @@
 # di marker di H3 (Ishii et al., IROS 2009, sez. IV): merging delle label divise tra i blocchi e
 # corrispondenza tra frame con la label map (tools/cyclictest-job/h3track.h). Le istruzioni sono quelle
 # dell'algoritmo; sintetici sono solo i dati in ingresso (i momenti che l'FPGA darebbe per l'esperimento
-# del paper: 60 marker su un disco a 26 giri/s, 1000 fps). Richiede il binario con --job-algo:
-# compilarlo con tools/cyclictest-job/build.sh e inserire qui sotto il suo SHA-256 (finché c'è il
-# segnaposto il pre-test fallisce e la campagna non parte).
+# del paper: 60 marker su un disco a 26 giri/s, 1000 fps). Binario compilato il 21/10/2026 con
+# tools/cyclictest-job/build.sh: 1,29 M istruzioni e circa 250 µs per attivazione su CPU3
+# (results/jetson-results/cyclictest-job-h3track-20261021/).
 name: thesis_h3track
 victim_cores: [0, 3]
 isolcpu: [0, 3]
@@ -22,7 +22,7 @@ perf_min_running_pct: 90
 # Clock fissi come nelle altre due configurazioni; la policy IRQ deve essere quella di
 # default (maschera 3f) e viene registrata prima e dopo la campagna.
 command-pre-test:
-  - echo "SHA256_DA_INSERIRE_DOPO_LA_BUILD  /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job" | sha256sum -c
+  - echo "b9966e3e726f17f228d95cb7cb79b8c1f376e29bf7e91662b2febb5a40d2ce68  /home/nvidia/codex-work/cyclictest-job-h3track/cyclictest-job" | sha256sum -c
   - sudo -n jetson_clocks --fan
   - |
     test "$(cat /proc/irq/default_smp_affinity)" = 3f || { echo "IRQ affinity is not the default" >&2; exit 1; }

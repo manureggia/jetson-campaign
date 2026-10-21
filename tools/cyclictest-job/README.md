@@ -76,11 +76,29 @@ Binari sulla Jetson:
   `9928a217f39cd04ad628dd0cf75e5edfdaf576a1940a02fea779aee59637c739`: la prima versione della patch, con
   `--job-read` e `--job-pattern` oltre a `--job-write`. È quella di `campaign-thesis-base-h3.yaml`, che usa
   solo `--job-write`, uguale nelle due versioni.
-- `/home/nvidia/codex-work/cyclictest-job-h3track/`: da compilare con questa patch; il suo SHA-256 va
-  inserito nel pre-test di `campaign-thesis-h3track.yaml`.
+- `/home/nvidia/codex-work/cyclictest-job-h3track/`, SHA-256
+  `b9966e3e726f17f228d95cb7cb79b8c1f376e29bf7e91662b2febb5a40d2ce68`: questa patch, compilata il
+  21 ottobre 2026; è quella di `campaign-thesis-h3track.yaml`.
 
 ## Verifiche fatte il 14 ottobre 2026 (CPU3 senza cpuset, 20 s per prova)
 
 - A/B senza lavoro: cyclictest originale 2,635/2,636/2,679 µs, cyclictest-job 2,624/2,664/2,634 µs.
 
 Log, JSON e trace sono in `results/jetson-results/cyclictest-job-20261014/`.
+
+## Verifiche fatte il 21 ottobre 2026 (binario h3track, CPU3 senza cpuset, clock fissi a 1,728 GHz)
+
+`smoke_h3track.sh`, 20 s per prova; istruzioni e cicli utente per attivazione con `perf stat` su run da
+10 e 30 s, differenza / 20.000 attivazioni (l'inizializzazione si annulla).
+
+- `h3track_test` sulla Jetson: hash dell'ingresso `60849da8c6219b05` come sul Mac, 0 errori.
+- A/B senza lavoro: binario vecchio 3,02/3,29 µs di latenza media, nuovo 3,06/3,43 µs.
+- `h3_frame`: exec medio 95,4 µs con entrambi i binari; 655.893 istruzioni per attivazione col nuovo,
+  655.916 col vecchio, quindi i due sono equivalenti per `campaign-thesis-base-h3.yaml`.
+- `h3track`: **1.286.148 istruzioni** e 429.392 cicli per attivazione (IPC 3,0); exec medio 248,5 µs,
+  massimo 267,4 µs; con interfgen su CPU0–2 257,5 µs, massimo 336,5 µs. Nessun rilascio saltato, check
+  0 errori, 60 label create e poi sempre ritrovate (1.199.940 corrispondenze su 20.000 frame).
+
+La prima build scriveva il frame rileggendo `job.cycles` a ogni scrittura (984k istruzioni invece di
+656k, stessi cicli); corretta con una variabile locale. I risultati di quella build sono in `smoke_v1/`.
+Tutto in `results/jetson-results/cyclictest-job-h3track-20261021/`.

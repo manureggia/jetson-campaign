@@ -1,5 +1,5 @@
 --- a/src/cyclictest/cyclictest.c	2026-10-21 14:00:11
-+++ b/src/cyclictest/cyclictest.c	2026-10-21 14:04:32
++++ b/src/cyclictest/cyclictest.c	2026-10-21 14:16:19
 @@ -497,7 +497,99 @@
   * - CLOCK_MONOTONIC
   * - CLOCK_REALTIME
@@ -55,7 +55,7 @@
 +
 +static void job_run(void)
 +{
-+	uint64_t *w;
++	uint64_t *w, v = job.cycles;	/* local: w may alias job, which would force a reload per store */
 +	unsigned long i, words;
 +
 +	if (job_h3track) {
@@ -68,7 +68,7 @@
 +		job.slot = 0;
 +	words = job.slot_size / sizeof(*w);
 +	for (i = 0; i < words; i++)
-+		w[i] = job.cycles + i;
++		w[i] = v + i;
 +}
 +
 +static void job_hist_sample(struct job_hist *h, int64_t ns)
